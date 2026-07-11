@@ -3509,7 +3509,7 @@ function _adminRender(rows){
   const dupDevs=Object.keys(byDev).filter(d=>byDev[d].length>1);
   const dupNicks=new Set(); for(const d of dupDevs) for(const n of byDev[d]) dupNicks.add(n);
   const now=Date.now();
-  const isOnline=(r)=> r.last_seen ? (now - new Date(r.last_seen).getTime() < 60000) : false;   // 1분 이내
+  const isOnline=(r)=> r.last_seen ? (now - new Date(r.last_seen).getTime() < 15000) : false;   // 15초 이내
   const onlineCount=rows.filter(isOnline).length;
   info.textContent='계정 '+rows.length+'개 · 접속 중 '+onlineCount+'명 · 같은 기기 중복 '+dupDevs.length+'건 (⚠)';
   list.innerHTML='';
@@ -3550,14 +3550,14 @@ function _adminRender(rows){
     list.appendChild(wrap);
   }
 }
-// 관리자 패널이 열려 있는 동안 20초마다 자동 새로고침(온라인 상태 갱신)
+// 관리자 패널이 열려 있는 동안 5초마다 자동 새로고침(온라인 상태 실시간 갱신)
 setInterval(async ()=>{
   const ap=document.getElementById('adminPanel');
   const body=document.getElementById('adminBody');
   if(!ap || ap.style.display!=='flex' || !body || body.style.display!=='flex' || !_adminPass) return;
   const res=await _adminRpc('admin_list');
   if(res.ok) _adminRender(res.data||[]);
-}, 20000);
+}, 5000);
 // 계정의 모든 라운드 내역 보기
 async function adminHistory(nick, box){
   if(box.style.display==='block'){ box.style.display='none'; return; }
@@ -3691,8 +3691,14 @@ async function lbRenderList(game, mode){
 }
 
 // ── 접속 상태(하트비트): 관리자에게 온라인 여부·현재 플레이 상태 표시 ──
-let _hbGame='', _hbMode='', _hbScore=0;
-function lbSetActivity(game, mode, score){ _hbGame=game||''; _hbMode=mode||''; _hbScore=score||0; }
+let _hbGame='', _hbMode='', _hbScore=0, _hbLastPush=0;
+function lbSetActivity(game, mode, score){
+  const changed = (game!==_hbGame) || (mode!==_hbMode);
+  _hbGame=game||''; _hbMode=mode||''; _hbScore=score||0;
+  // 게임을 시작/종료해서 상태가 바뀌면 바로 전송(과다 전송 방지용 1초 제한)
+  const t=Date.now();
+  if(changed && t-_hbLastPush > 1000){ _hbLastPush=t; _sendHeartbeat(); }
+}
 async function _sendHeartbeat(){
   if(!lbOn() || !acct || !acct.token) return;
   try{
@@ -3702,8 +3708,23 @@ async function _sendHeartbeat(){
     });
   }catch(e){}
 }
-setInterval(_sendHeartbeat, 15000);   // 15초마다
-setTimeout(_sendHeartbeat, 1500);     // 접속 직후 한 번
+setInterval(_sendHeartbeat, 5000);    // 5초마다
+setTimeout(_sendHeartbeat, 800);      // 접속 직후 한 번
+// 탭을 다시 보면 즉시 갱신 / 창을 닫거나 떠나면 즉시 오프라인 처리
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) _sendHeartbeat(); });
+window.addEventListener('pagehide', _sendOffline);
+window.addEventListener('beforeunload', _sendOffline);
+function _sendOffline(){
+  if(!lbOn() || !acct || !acct.token) return;
+  try{
+    const body = JSON.stringify({ p_nick:acct.nick, p_token:acct.token });
+    // 창이 닫히는 중에도 확실히 전송되도록 sendBeacon 사용
+    if(navigator.sendBeacon){
+      const blob = new Blob([body], { type:'application/json' });
+      navigator.sendBeacon(LB_URL + '/rest/v1/rpc/lb_bye?apikey=' + encodeURIComponent(LB_KEY), blob);
+    }
+  }catch(e){}
+}
 
 // 모든 라운드 기록(플레이할 때마다) — 관리자 조회용
 async function lbLogRound(game, mode, score){
