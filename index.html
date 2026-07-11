@@ -468,7 +468,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <div style="display:flex; align-items:baseline; gap:10px;">
           <div style="color:#FF8C00; font-size:16px; font-weight:600;">🔐 관리자</div>
-          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD P9L5J3XK</div>
+          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD T2F7B4YM</div>
         </div>
         <button onclick="adminClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
       </div>
@@ -528,9 +528,21 @@
       <div id="vsCodeLabel" style="color:#aaa; font-size:12px;">방 코드</div>
       <div id="vsRoomCode" style="color:#00FFB0; font-family:monospace; font-size:34px; letter-spacing:8px; font-weight:600;">------</div>
       <div id="vsCodeHint" style="color:#888; font-size:12px;">친구에게 이 코드를 알려주세요.</div>
+      <div id="vsPlayers" style="display:none; align-items:center; gap:14px; margin-top:10px; padding:10px 18px; background:#111; border:1px solid #2a2a2a; border-radius:10px;"></div>
       <div id="vsWaitMsg" style="color:#FFD600; font-size:12px; margin-top:6px;">상대를 기다리는 중…</div>
+      <button id="vsStartBtn" onclick="vsHostStart()" style="display:none; background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:10px 34px; border-radius:8px; cursor:pointer; font-size:14px; margin-top:4px;">시작</button>
       <button onclick="vsLeaveRoom()" style="background:transparent; border:1px solid #666; color:#aaa; padding:7px 18px; border-radius:6px; cursor:pointer; font-size:12px; margin-top:6px;">취소</button>
     </div>
+  </div>
+
+  <!-- 대전: 모드 투표 (5행 × 10열) -->
+  <div id="vsVote" style="position:absolute; inset:0; z-index:42; display:none; background:#000; flex-direction:column; align-items:center; justify-content:center; padding:3% 3%; box-sizing:border-box; gap:12px;">
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div style="color:#fff; font-size:16px; font-weight:600;">모드 선택</div>
+      <div style="color:#FFD600; font-size:14px;">남은 시간 <span id="vsVoteTime" style="font-weight:700;">10</span>초</div>
+    </div>
+    <div id="vsVoteGrid" style="width:100%; display:grid; grid-template-columns:repeat(10, 1fr); gap:6px;"></div>
+    <div style="color:#666; font-size:11px;">모드를 클릭해 투표하세요 · 둘 다 투표하면 3초 뒤 시작</div>
   </div>
 
   <!-- 대전: 배틀 화면 (좌: 나 / 우: 상대) -->
@@ -557,14 +569,11 @@
       </div>
     </div>
     <div id="vsCountdown" style="position:absolute; top:46%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:56px; font-weight:700; text-shadow:0 0 20px rgba(255,255,255,0.6); display:none; z-index:3;"></div>
+    <div id="vsModeLabel" style="position:absolute; top:6px; left:50%; transform:translateX(-50%); color:#888; font-size:11px; z-index:3;"></div>
     <div id="vsResult" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.85); z-index:4; align-items:center; justify-content:center; flex-direction:column; gap:14px;">
       <div id="vsResultText" style="font-size:34px; font-weight:800;"></div>
       <div id="vsResultScore" style="color:#aaa; font-size:14px;"></div>
-      <div style="display:flex; gap:10px; margin-top:6px;">
-        <button onclick="vsRematch()" style="background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:9px 22px; border-radius:8px; cursor:pointer; font-size:13px;">다시 대결</button>
-        <button onclick="vsExit()" style="background:transparent; border:1px solid #fff; color:#fff; padding:9px 22px; border-radius:8px; cursor:pointer; font-size:13px;">나가기</button>
-      </div>
-      <div id="vsRematchMsg" style="color:#FFD600; font-size:12px; display:none;">상대의 응답을 기다리는 중…</div>
+      <button id="vsBackBtn" onclick="vsAfterResult()" style="background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:10px 26px; border-radius:8px; cursor:pointer; font-size:13px; margin-top:6px;">방으로 돌아가기</button>
     </div>
   </div>
 
@@ -3699,47 +3708,65 @@ async function adminDelete(nick){
   const again=await _adminRpc('admin_list');
   if(again.ok) _adminRender(again.data||[]);
 }
-// ═══════════════ 대전 (VERSUS) — 1:1 방 코드 대결 ═══════════════
-// 좌: 내 플레이 / 우: 상대 플레이(실시간 재현). 먼저 죽는 사람이 패배. 모드: EXPERT
-const VS_SPEED = 2.5;                 // Expert 속도
-const VS_INTERVAL = 1080 / VS_SPEED;  // 링 생성 간격
-let vsRoom=null, vsIsHost=false, vsOppNick='', vsState='idle';   // idle|waiting|countdown|playing|over
-let vsPollTimer=null, vsPushTimer=null, vsRAF=null;
-let vsMe={ angle:0, rings:[], score:0, dead:false, last:0 };
-let vsOpp={ angle:0, rings:[], score:0, dead:false };
-let vsKeys=null;
+// ═══════════════ 대전 (VERSUS) ═══════════════
+// 흐름: 로비 → (방/자동매칭) → 대기실 → 모드 투표(10초) → 3·2·1 → 동시 플레이 → 승패 → 복귀
+// 피하기: 먼저 죽는 사람 패배 / 디펜스: 먼저 죽어도 점수 기준으로 판정 (보스는 예외)
+const VS_MODES = [
+  { id:'a_normal',  game:'avoid',   label:'피하기', kind:'기본',   diff:'NORMAL', speed:1.2, blind:false },
+  { id:'a_hard',    game:'avoid',   label:'피하기', kind:'기본',   diff:'HARD',   speed:1.8, blind:false },
+  { id:'a_expert',  game:'avoid',   label:'피하기', kind:'기본',   diff:'EXPERT', speed:2.5, blind:false },
+  { id:'ab_normal', game:'avoid',   label:'피하기', kind:'블라인드', diff:'NORMAL', speed:1.2, blind:true },
+  { id:'ab_hard',   game:'avoid',   label:'피하기', kind:'블라인드', diff:'HARD',   speed:1.8, blind:true },
+  { id:'d_expert',  game:'deflect', label:'디펜스', kind:'난이도',  diff:'EXPERT', dmode:'expert' },
+  { id:'d_bossH',   game:'deflect', label:'디펜스', kind:'보스',   diff:'HARD',   dmode:'bossHard' },
+  { id:'d_bossE',   game:'deflect', label:'디펜스', kind:'보스',   diff:'EXPERT', dmode:'boss' },
+  { id:'d_twinH',   game:'deflect', label:'디펜스', kind:'트윈',   diff:'HARD',   dmode:'twinHard' },
+  { id:'d_twinE',   game:'deflect', label:'디펜스', kind:'트윈',   diff:'EXPERT', dmode:'twinExpert' }
+];
+function vsModeById(id){ return VS_MODES.find(m=>m.id===id) || VS_MODES[2]; }
 
+let vsRoom=null, vsIsHost=false, vsOppNick='', vsAuto=false;
+let vsPhase='idle';        // idle|waiting|vote|countdown|playing|over
+let vsPollTimer=null, vsPushTimer=null, vsRAF=null, vsVoteTimer=null;
+let vsMyVote=null, vsOppVote=null, vsVoteLeft=10, vsMode=null;
+let vsMe={ angle:0, rings:[], score:0, dead:false, last:0, done:false };
+let vsOpp={ angle:0, rings:[], score:0, dead:false, done:false };
+let _vsLastTs=0;
+
+function _vsEl(id){ return document.getElementById(id); }
 function vsOpen(){
   if(!lbOn()){ alert('대전은 서버 연결이 필요해요.'); return; }
-  if(!acct){ document.getElementById('vsNeedAcct').style.display='flex'; return; }
+  if(!acct){ _vsEl('vsNeedAcct').style.display='flex'; return; }
   if(controlsOpen) toggleControls(); if(settingsOpen) toggleSettings();
   mainScreen.style.display='none';
-  document.getElementById('vsLobby').style.display='flex';
-  document.getElementById('vsLobbyMain').style.display='flex';
-  document.getElementById('vsWaiting').style.display='none';
-  document.getElementById('vsLobbyErr').style.display='none';
-  document.getElementById('vsCodeInput').value='';
-  vsState='idle';
+  _vsEl('vsLobby').style.display='flex';
+  _vsEl('vsLobbyMain').style.display='flex';
+  _vsEl('vsWaiting').style.display='none';
+  _vsEl('vsLobbyErr').style.display='none';
+  _vsEl('vsCodeInput').value='';
+  vsPhase='idle'; vsAuto=false;
   try{ stopMusic(); }catch(e){}
 }
-// 계정 없이 대전을 누른 경우: 안내 → 예(계정 창) / 아니오(메인화면)
-function vsNeedAcctYes(){ document.getElementById('vsNeedAcct').style.display='none'; showChooser(); }
-function vsNeedAcctNo(){ document.getElementById('vsNeedAcct').style.display='none'; }
-function vsExit(){
-  vsCleanup();
-  document.getElementById('vsLobby').style.display='none';
-  document.getElementById('vsBattle').style.display='none';
-  document.getElementById('vsResult').style.display='none';
-  mainScreen.style.display='flex';
-  gameState='main';
-  try{ startMusic('main'); }catch(e){}
+function vsNeedAcctYes(){ _vsEl('vsNeedAcct').style.display='none'; showChooser(); }
+function vsNeedAcctNo(){ _vsEl('vsNeedAcct').style.display='none'; }
+
+function _vsStopTimers(){
+  clearInterval(vsPollTimer); vsPollTimer=null;
+  clearInterval(vsPushTimer); vsPushTimer=null;
+  clearInterval(vsVoteTimer); vsVoteTimer=null;
+  if(vsRAF){ cancelAnimationFrame(vsRAF); vsRAF=null; }
 }
 function vsCleanup(){
   if(vsRoom) vsRpc('vs_leave', { p_code:vsRoom }).catch(()=>{});
-  clearInterval(vsPollTimer); vsPollTimer=null;
-  clearInterval(vsPushTimer); vsPushTimer=null;
-  if(vsRAF) cancelAnimationFrame(vsRAF); vsRAF=null;
-  vsRoom=null; vsState='idle'; vsOppNick='';
+  _vsStopTimers();
+  vsRoom=null; vsPhase='idle'; vsOppNick=''; vsAuto=false; vsMode=null;
+}
+function vsExit(){
+  vsCleanup();
+  ['vsLobby','vsBattle','vsVote','vsResult'].forEach(id=>{ const e=_vsEl(id); if(e) e.style.display='none'; });
+  mainScreen.style.display='flex';
+  gameState='main';
+  try{ startMusic('main'); }catch(e){}
 }
 async function vsRpc(fn, extra){
   const body = Object.assign({ p_nick:acct?acct.nick:'', p_token:acct?acct.token:'' }, extra||{});
@@ -3753,181 +3780,287 @@ async function vsRpc(fn, extra){
     return { ok:false, msg:m||('HTTP '+r.status) };
   }catch(e){ return { ok:false, msg:'네트워크 오류' }; }
 }
-function _vsErr(t){ const e=document.getElementById('vsLobbyErr'); e.textContent=t; e.style.display='block'; }
+function _vsErr(t){ const e=_vsEl('vsLobbyErr'); e.textContent=t; e.style.display='block'; }
+function _vsRow(d){ return Array.isArray(d) ? d[0] : d; }
 
-// ⚡ 자동 매칭: 대기 중인 방이 있으면 입장, 없으면 새 방을 만들고 기다림
-async function vsAutoMatch(){
-  const res = await vsRpc('vs_match');
-  if(!res.ok){ _vsErr('매칭 실패: '+res.msg); return; }
-  const d = (typeof res.data==='string') ? { code:res.data, joined:false } : (res.data||{});
-  const code = d.code || (Array.isArray(res.data) ? (res.data[0]&&res.data[0].code) : null);
-  const joined = Array.isArray(res.data) ? !!(res.data[0]&&res.data[0].joined) : !!d.joined;
-  if(!code){ _vsErr('매칭 실패'); return; }
-  vsRoom = code; vsIsHost = !joined;
-  document.getElementById('vsLobbyMain').style.display='none';
-  document.getElementById('vsWaiting').style.display='flex';
-  document.getElementById('vsRoomCode').style.display='none';          // 자동 매칭은 코드 숨김
-  document.getElementById('vsCodeLabel').style.display='none';
-  document.getElementById('vsCodeHint').style.display='none';
-  document.getElementById('vsWaitMsg').textContent = joined ? '상대를 찾았어요! 연결 중…' : '상대를 찾는 중…';
-  vsState='waiting';
-  vsPollTimer = setInterval(vsPollLobby, 1200);
-}
+// ── 방 만들기 / 입장 / 자동 매칭 ──
 async function vsCreateRoom(){
   const res = await vsRpc('vs_create');
   if(!res.ok){ _vsErr('방 만들기 실패: '+res.msg); return; }
-  vsRoom = (typeof res.data==='string') ? res.data : (res.data && res.data.code);
-  vsIsHost = true;
-  document.getElementById('vsRoomCode').textContent = vsRoom;
-  document.getElementById('vsRoomCode').style.display='block';
-  document.getElementById('vsCodeLabel').style.display='block';
-  document.getElementById('vsCodeHint').style.display='block';
-  document.getElementById('vsLobbyMain').style.display='none';
-  document.getElementById('vsWaiting').style.display='flex';
-  vsState='waiting';
-  vsPollTimer = setInterval(vsPollLobby, 1200);
+  const d=_vsRow(res.data);
+  vsRoom = (typeof d==='string') ? d : (d && d.code);
+  vsIsHost=true; vsAuto=false;
+  _vsEnterWaiting(true);
 }
 async function vsJoinRoom(){
-  const code = (document.getElementById('vsCodeInput').value||'').trim().toUpperCase();
+  const code=(_vsEl('vsCodeInput').value||'').trim().toUpperCase();
   if(code.length<4){ _vsErr('방 코드를 입력하세요.'); return; }
   const res = await vsRpc('vs_join', { p_code:code });
   if(!res.ok){
-    _vsErr(/NO_ROOM/.test(res.msg) ? '방을 찾을 수 없어요.' : /FULL/.test(res.msg) ? '이미 꽉 찬 방이에요.' : ('입장 실패: '+res.msg));
+    _vsErr(/NO_ROOM/.test(res.msg)?'방을 찾을 수 없어요.':/FULL/.test(res.msg)?'이미 꽉 찬 방이에요.':('입장 실패: '+res.msg));
     return;
   }
-  vsRoom = code; vsIsHost = false;
-  document.getElementById('vsLobbyMain').style.display='none';
-  document.getElementById('vsWaiting').style.display='flex';
-  document.getElementById('vsRoomCode').textContent = code;
-  document.getElementById('vsRoomCode').style.display='block';
-  document.getElementById('vsCodeLabel').style.display='block';
-  document.getElementById('vsCodeHint').style.display='none';
-  document.getElementById('vsWaitMsg').textContent = '연결 중…';
-  vsState='waiting';
-  vsPollTimer = setInterval(vsPollLobby, 1200);
+  vsRoom=code; vsIsHost=false; vsAuto=false;
+  _vsEnterWaiting(true);
+}
+async function vsAutoMatch(){
+  const res = await vsRpc('vs_match');
+  if(!res.ok){ _vsErr('매칭 실패: '+res.msg); return; }
+  const d=_vsRow(res.data)||{};
+  const code = d.code || (typeof res.data==='string'?res.data:null);
+  if(!code){ _vsErr('매칭 실패'); return; }
+  vsRoom=code; vsIsHost=!d.joined; vsAuto=true;
+  _vsEnterWaiting(false);
+}
+// 대기실 진입 (showCode=false면 자동 매칭)
+function _vsEnterWaiting(showCode){
+  vsPhase='waiting';
+  _vsEl('vsLobbyMain').style.display='none';
+  _vsEl('vsWaiting').style.display='flex';
+  _vsEl('vsCodeLabel').style.display = showCode?'block':'none';
+  _vsEl('vsRoomCode').style.display  = showCode?'block':'none';
+  _vsEl('vsCodeHint').style.display  = (showCode && vsIsHost)?'block':'none';
+  if(showCode) _vsEl('vsRoomCode').textContent = vsRoom;
+  _vsEl('vsWaitMsg').textContent = vsAuto ? '상대를 찾는 중…' : '상대를 기다리는 중…';
+  _vsEl('vsPlayers').style.display='none';
+  _vsEl('vsStartBtn').style.display='none';
+  clearInterval(vsPollTimer);
+  vsPollTimer=setInterval(vsPollLobby, 1000);
 }
 function vsLeaveRoom(){
   vsCleanup();
-  document.getElementById('vsLobbyMain').style.display='flex';
-  document.getElementById('vsWaiting').style.display='none';
+  _vsEl('vsLobbyMain').style.display='flex';
+  _vsEl('vsWaiting').style.display='none';
 }
-// 로비 폴링: 두 명이 다 모이면 대결 시작
+// 대기실 폴링: 두 명이 모이면 이름 표시 → (방) 방장이 시작 / (자동) 바로 투표
 async function vsPollLobby(){
-  if(!vsRoom) return;
-  const res = await vsRpc('vs_state', { p_code:vsRoom });
+  if(!vsRoom || (vsPhase!=='waiting')) return;
+  const res=await vsRpc('vs_state', { p_code:vsRoom });
   if(!res.ok) return;
-  const d = Array.isArray(res.data) ? res.data[0] : res.data;
-  if(!d) return;
+  const d=_vsRow(res.data); if(!d) return;
   if(d.host_nick && d.guest_nick){
     vsOppNick = (acct.nick===d.host_nick) ? d.guest_nick : d.host_nick;
-    clearInterval(vsPollTimer); vsPollTimer=null;
-    vsStartBattle();
+    vsIsHost  = (acct.nick===d.host_nick);
+    _vsEl('vsWaitMsg').textContent = '';
+    const pl=_vsEl('vsPlayers');
+    pl.style.display='flex';
+    pl.innerHTML =
+      '<div style="color:#00FFB0; font-size:14px;">👑 '+_lbEsc(d.host_nick)+'</div>'+
+      '<div style="color:#555; font-size:12px;">VS</div>'+
+      '<div style="color:#FF8C00; font-size:14px;">'+_lbEsc(d.guest_nick)+'</div>';
+    if(vsAuto){ clearInterval(vsPollTimer); vsPollTimer=null; vsStartVote(); return; }
+    if(vsIsHost){
+      _vsEl('vsStartBtn').style.display='block';
+    } else {
+      _vsEl('vsWaitMsg').textContent = '방장이 시작하기를 기다리는 중…';
+    }
+    // 방장이 시작하면 게스트도 따라 들어감
+    if(!vsIsHost && d.phase==='vote'){ clearInterval(vsPollTimer); vsPollTimer=null; vsStartVote(); }
   }
 }
-// ── 배틀 시작 ──
+async function vsHostStart(){
+  await vsRpc('vs_phase', { p_code:vsRoom, p_phase:'vote' });
+  clearInterval(vsPollTimer); vsPollTimer=null;
+  vsStartVote();
+}
+
+// ── 모드 투표 (10초) ──
+function vsStartVote(){
+  vsPhase='vote'; vsMyVote=null; vsOppVote=null; vsVoteLeft=10;
+  _vsEl('vsLobby').style.display='none';
+  _vsEl('vsVote').style.display='flex';
+  _vsRenderVoteGrid();
+  vsRpc('vs_vote', { p_code:vsRoom, p_vote:'' }).catch(()=>{});
+  clearInterval(vsVoteTimer);
+  vsVoteTimer=setInterval(vsVoteTick, 1000);
+  clearInterval(vsPollTimer);
+  vsPollTimer=setInterval(vsPollVote, 700);
+  _vsEl('vsVoteTime').textContent = vsVoteLeft;
+}
+function _vsRenderVoteGrid(){
+  const g=_vsEl('vsVoteGrid');
+  g.innerHTML='';
+  for(const m of VS_MODES){
+    const col=document.createElement('div');
+    col.style.cssText='display:flex; flex-direction:column; border:1px solid #333; border-radius:8px; overflow:hidden; cursor:pointer; transition:box-shadow .12s;';
+    col.onmouseenter=()=>{ col.style.boxShadow='inset 0 0 0 2px rgba(255,255,255,0.5)'; };
+    col.onmouseleave=()=>{ col.style.boxShadow='none'; };
+    col.onclick=()=>vsCastVote(m.id);
+    const c1=m.game==='avoid'?'#00FFB0':'#B36BFF';
+    col.innerHTML=
+      '<div style="padding:6px 2px; text-align:center; font-size:11px; color:'+c1+'; background:#111; border-bottom:1px solid #262626;">'+m.label+'</div>'+
+      '<div style="padding:6px 2px; text-align:center; font-size:11px; color:#ccc; background:#0d0d0d; border-bottom:1px solid #262626;">'+m.kind+'</div>'+
+      '<div style="padding:6px 2px; text-align:center; font-size:11px; color:#fff; font-weight:600; background:#111; border-bottom:1px solid #262626;">'+m.diff+'</div>'+
+      '<div id="vm_me_'+m.id+'" style="padding:6px 2px; text-align:center; font-size:11px; min-height:26px; color:#00FFB0; background:#0a0a0a; border-bottom:1px solid #262626;"></div>'+
+      '<div id="vm_op_'+m.id+'" style="padding:6px 2px; text-align:center; font-size:11px; min-height:26px; color:#FF8C00; background:#0a0a0a;"></div>';
+    g.appendChild(col);
+  }
+  _vsPaintVotes();
+}
+function _vsPaintVotes(){
+  for(const m of VS_MODES){
+    const me=_vsEl('vm_me_'+m.id), op=_vsEl('vm_op_'+m.id);
+    if(me) me.textContent = (vsMyVote===m.id) ? '● 나' : '';
+    if(op) op.textContent = (vsOppVote===m.id) ? '● 상대' : '';
+  }
+}
+function vsCastVote(id){
+  if(vsPhase!=='vote') return;
+  vsMyVote=id; _vsPaintVotes();
+  vsRpc('vs_vote', { p_code:vsRoom, p_vote:id }).catch(()=>{});
+  _vsMaybeRush();
+}
+async function vsPollVote(){
+  if(vsPhase!=='vote' || !vsRoom) return;
+  const res=await vsRpc('vs_state', { p_code:vsRoom });
+  if(!res.ok) return;
+  const d=_vsRow(res.data); if(!d) return;
+  const mine=(acct.nick===d.host_nick);
+  const ov = mine ? d.guest_vote : d.host_vote;
+  vsOppVote = ov || null;
+  _vsPaintVotes();
+  _vsMaybeRush();
+}
+// 둘 다 투표했고 3초 초과 남았으면 3초로 단축
+function _vsMaybeRush(){
+  if(vsMyVote && vsOppVote && vsVoteLeft>3){ vsVoteLeft=3; _vsEl('vsVoteTime').textContent=vsVoteLeft; }
+}
+function vsVoteTick(){
+  vsVoteLeft--;
+  _vsEl('vsVoteTime').textContent = Math.max(0,vsVoteLeft);
+  if(vsVoteLeft<=0){
+    clearInterval(vsVoteTimer); vsVoteTimer=null;
+    clearInterval(vsPollTimer); vsPollTimer=null;
+    vsDecideMode();
+  }
+}
+// 모드 결정: 둘이 같으면 그것 / 다르면 랜덤으로 둘 중 하나 / 아무도 안 하면 기본(EXPERT)
+function vsDecideMode(){
+  let id;
+  if(vsMyVote && vsOppVote){
+    id = (vsMyVote===vsOppVote) ? vsMyVote : ( (acct.nick < (vsOppNick||'')) ? vsMyVote : vsOppVote );
+    // 양쪽이 같은 규칙(사전순 작은 쪽 투표 채택)으로 계산하므로 결과가 일치함
+  } else id = vsMyVote || vsOppVote || 'a_expert';
+  vsMode = vsModeById(id);
+  _vsEl('vsVote').style.display='none';
+  vsStartBattle();
+}
+
+// ── 배틀 ──
 function vsStartBattle(){
-  document.getElementById('vsLobby').style.display='none';
-  document.getElementById('vsBattle').style.display='flex';
-  document.getElementById('vsResult').style.display='none';
-  document.getElementById('vsMeDead').style.display='none';
-  document.getElementById('vsOppDead').style.display='none';
-  document.getElementById('vsMeName').textContent = acct.nick;
-  document.getElementById('vsOppName').textContent = vsOppNick || '상대';
-  document.getElementById('vsMeScore').textContent='0';
-  document.getElementById('vsOppScore').textContent='0';
-  vsMe={ angle:0, rings:[], score:0, dead:false, last:0 };
-  vsOpp={ angle:0, rings:[], score:0, dead:false };
-  vsState='countdown';
+  const m=vsMode||vsModeById('a_expert');
+  _vsEl('vsBattle').style.display='flex';
+  _vsEl('vsResult').style.display='none';
+  _vsEl('vsMeDead').style.display='none';
+  _vsEl('vsOppDead').style.display='none';
+  _vsEl('vsMeName').textContent=acct.nick;
+  _vsEl('vsOppName').textContent=vsOppNick||'상대';
+  _vsEl('vsMeScore').textContent='0';
+  _vsEl('vsOppScore').textContent='0';
+  _vsEl('vsModeLabel').textContent = m.label+' · '+m.kind+' · '+m.diff;
+  vsMe={ angle:0, rings:[], score:0, dead:false, last:0, done:false };
+  vsOpp={ angle:0, rings:[], score:0, dead:false, done:false };
+  vsPhase='countdown';
   try{ startMusic('game'); }catch(e){}
   let n=3;
-  const cd=document.getElementById('vsCountdown');
+  const cd=_vsEl('vsCountdown');
   cd.style.display='block'; cd.textContent=n;
   const t=setInterval(()=>{
     n--;
     if(n>0) cd.textContent=n;
     else{
       clearInterval(t); cd.style.display='none';
-      vsState='playing'; vsMe.last=performance.now();
-      vsPushTimer = setInterval(vsPush, 100);        // 내 상태 초당 10회 전송
-      vsPollTimer = setInterval(vsPull, 100);        // 상대 상태 수신
-      vsRAF = requestAnimationFrame(vsLoop);
+      vsPhase='playing'; vsMe.last=performance.now(); _vsLastTs=0;
+      vsPushTimer=setInterval(vsPush, 120);
+      vsPollTimer=setInterval(vsPull, 120);
+      vsRAF=requestAnimationFrame(vsLoop);
     }
   },1000);
 }
-// 내 상태 전송 (각도·레이저·점수·사망)
 async function vsPush(){
-  if(!vsRoom || vsState!=='playing') return;
-  const st = { a: Math.round(vsMe.angle*100)/100, s: vsMe.score, d: vsMe.dead,
-               r: vsMe.rings.map(x=>[Math.round(x.r), Math.round(x.gapAngle*100)/100]) };
+  if(!vsRoom || (vsPhase!=='playing' && vsPhase!=='over')) return;
+  const st={ a:Math.round(vsMe.angle*100)/100, s:vsMe.score, d:vsMe.dead, f:vsMe.done,
+             r:vsMe.rings.map(x=>[Math.round(x.r), Math.round(x.gapAngle*100)/100]) };
   vsRpc('vs_push', { p_code:vsRoom, p_state:JSON.stringify(st) }).catch(()=>{});
 }
-// 상대 상태 수신
 async function vsPull(){
   if(!vsRoom) return;
-  const res = await vsRpc('vs_state', { p_code:vsRoom });
+  const res=await vsRpc('vs_state', { p_code:vsRoom });
   if(!res.ok) return;
-  const d = Array.isArray(res.data) ? res.data[0] : res.data;
-  if(!d) return;
-  const mine = (acct.nick===d.host_nick);
+  const d=_vsRow(res.data); if(!d) return;
+  const mine=(acct.nick===d.host_nick);
   const raw = mine ? d.guest_state : d.host_state;
   if(raw){
     try{
-      const s = (typeof raw==='string') ? JSON.parse(raw) : raw;
-      vsOpp.angle = s.a||0; vsOpp.score = s.s||0; vsOpp.dead = !!s.d;
-      vsOpp.rings = (s.r||[]).map(x=>({ r:x[0], gapAngle:x[1] }));
-      document.getElementById('vsOppScore').textContent = vsOpp.score;
-      if(vsOpp.dead) document.getElementById('vsOppDead').style.display='flex';
+      const s=(typeof raw==='string')?JSON.parse(raw):raw;
+      _vsOppTargetAngle = s.a||0;
+      vsOpp.score=s.s||0; vsOpp.dead=!!s.d; vsOpp.done=!!s.f;
+      vsOpp.rings=(s.r||[]).map(x=>({ r:x[0], gapAngle:x[1] }));
+      _vsEl('vsOppScore').textContent=vsOpp.score;
+      if(vsOpp.dead) _vsEl('vsOppDead').style.display='flex';
     }catch(e){}
   }
-  if(vsState==='playing' && (vsMe.dead || vsOpp.dead)) vsFinish();
+  if(vsPhase==='playing' && _vsShouldFinish()) vsFinish();
 }
-// ── 배틀 루프 ──
-let _vsLastTs=0;
+// 종료 조건 (게임/모드별)
+function _vsShouldFinish(){
+  const m=vsMode||{};
+  if(m.game==='avoid') return vsMe.dead || vsOpp.dead;           // 먼저 죽으면 끝
+  // 디펜스: 둘 다 끝나야 판정 (점수 비교). 단 보스는 둘 다 끝날 때까지 대기.
+  return (vsMe.dead||vsMe.done) && (vsOpp.dead||vsOpp.done);
+}
+// 상대 각도 부드럽게 보간(끊김 완화)
+let _vsOppTargetAngle=0;
 function vsLoop(ts){
-  if(vsState!=='playing'){ vsRAF=null; return; }
+  if(vsPhase!=='playing'){ vsRAF=null; return; }
   let dtf=1; if(_vsLastTs) dtf=Math.min((ts-_vsLastTs)/(1000/60),3);
   _vsLastTs=ts;
-  // 내 게임 진행
+  const m=vsMode||vsModeById('a_expert');
+  const speed=m.speed||2.5, interval=1080/speed;
+  // 내 진행
   if(!vsMe.dead){
-    if(ts - vsMe.last > VS_INTERVAL){
-      const cv=document.getElementById('vsMeCanvas');
-      vsMe.rings.push({ r: Math.max(cv.width,cv.height)*0.82, gapAngle: Math.random()*Math.PI*2, passed:false });
-      vsMe.last = ts;
+    const cv=_vsEl('vsMeCanvas');
+    if(ts-vsMe.last>interval){
+      vsMe.rings.push({ r:Math.max(cv.width,cv.height)*0.82, gapAngle:Math.random()*Math.PI*2, passed:false });
+      vsMe.last=ts;
     }
-    vsMe.rings = vsMe.rings.filter(r=>r.r>7);
-    for(const r of vsMe.rings) r.r -= VS_SPEED*2*dtf;
-    // 회전
-    if(_isPressed(keyBind.ccw1)||_isPressed(keyBind.ccw2)||touchLeft) vsMe.angle -= 0.12*dtf;
-    if(_isPressed(keyBind.cw1)||_isPressed(keyBind.cw2)||touchRight) vsMe.angle += 0.12*dtf;
-    // 통과 점수
-    const ar = arrowDist + arrowSize;
-    for(const r of vsMe.rings){ if(!r.passed && r.r < ar-2){ r.passed=true; vsMe.score+=10; document.getElementById('vsMeScore').textContent=vsMe.score; } }
-    // 충돌
-    if(vsHit(vsMe)){ vsMe.dead=true; document.getElementById('vsMeDead').style.display='flex'; vsPush(); }
+    vsMe.rings=vsMe.rings.filter(r=>r.r>7);
+    for(const r of vsMe.rings) r.r -= speed*2*dtf;
+    if(_isPressed(keyBind.ccw1)||_isPressed(keyBind.ccw2)||touchLeft) vsMe.angle-=0.12*dtf;
+    if(_isPressed(keyBind.cw1)||_isPressed(keyBind.cw2)||touchRight) vsMe.angle+=0.12*dtf;
+    const ar=arrowDist+arrowSize;
+    for(const r of vsMe.rings){ if(!r.passed && r.r<ar-2){ r.passed=true; vsMe.score+=10; _vsEl('vsMeScore').textContent=vsMe.score; } }
+    if(vsHit(vsMe)){ vsMe.dead=true; _vsEl('vsMeDead').style.display='flex'; vsPush(); }
   }
-  vsDraw(document.getElementById('vsMeCanvas'), vsMe, true);
-  vsDraw(document.getElementById('vsOppCanvas'), vsOpp, false);
-  vsRAF = requestAnimationFrame(vsLoop);
+  // 상대 각도 보간
+  let da=((_vsOppTargetAngle - vsOpp.angle + Math.PI*3) % (Math.PI*2)) - Math.PI;
+  vsOpp.angle += da*Math.min(1, 0.35*dtf);
+  // 상대 링도 자체적으로 부드럽게 이동(수신 사이 보간)
+  for(const r of vsOpp.rings) r.r -= speed*2*dtf*0.0;   // 수신값 그대로 사용
+  vsDraw(_vsEl('vsMeCanvas'), vsMe, true, m);
+  vsDraw(_vsEl('vsOppCanvas'), vsOpp, false, m);
+  if(_vsShouldFinish()){ vsFinish(); return; }
+  vsRAF=requestAnimationFrame(vsLoop);
 }
 function vsHit(p){
-  const tipD = arrowDist + arrowSize;
+  const tipD=arrowDist+arrowSize;
   for(const ring of p.rings){
-    if(Math.abs(tipD - ring.r) < 4){
-      let diff = ((p.angle - ring.gapAngle) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
-      if(diff > gapSize && diff < Math.PI*2 - gapSize) return true;
+    if(Math.abs(tipD-ring.r)<4){
+      let diff=((p.angle-ring.gapAngle)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+      if(diff>gapSize && diff<Math.PI*2-gapSize) return true;
     }
   }
   return false;
 }
-function vsDraw(cv, p, isMe){
-  const wrap = cv.parentElement;
-  const w = wrap.clientWidth, h = wrap.clientHeight;
+function vsDraw(cv,p,isMe,m){
+  const wrap=cv.parentElement;
+  const w=wrap.clientWidth, h=wrap.clientHeight;
   if(!w||!h) return;
   if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
-  const c = cv.getContext('2d');
+  const c=cv.getContext('2d');
   c.clearRect(0,0,w,h);
   const cx=w/2, cy=h/2, maxR=Math.max(w,h)*0.82;
-  const lc = isMe ? laserColor : { r:255, g:140, b:0 };
+  const lc=isMe?laserColor:{r:255,g:140,b:0};
   for(const ring of p.rings){
     const sA=ring.gapAngle+gapSize, eA=ring.gapAngle-gapSize+Math.PI*2;
     const t=Math.pow(Math.max(0,Math.min(1,1-(ring.r/maxR))),1.5);
@@ -3937,35 +4070,52 @@ function vsDraw(cv, p, isMe){
     c.beginPath(); c.arc(0,0,ring.r,sA,eA); c.strokeStyle=`rgba(${lc.r},${lc.g},${lc.b},${0.5+t*0.5})`; c.lineWidth=1.5; c.stroke();
     c.restore();
   }
+  // 블라인드: 중앙 주변만 보이게
+  if(m && m.blind && isMe){
+    const vr=arrowDist+arrowSize*18;
+    c.save();
+    const g=c.createRadialGradient(cx,cy,vr*0.55,cx,cy,vr);
+    g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,1)');
+    c.fillStyle=g; c.fillRect(0,0,w,h); c.restore();
+  }
   c.beginPath(); c.arc(cx,cy,7,0,Math.PI*2); c.fillStyle=circleColor; c.fill();
   const ax=cx+Math.cos(p.angle)*arrowDist, ay=cy+Math.sin(p.angle)*arrowDist;
   c.save(); c.translate(ax,ay); c.rotate(p.angle);
   c.beginPath(); c.moveTo(arrowSize,0); c.lineTo(-arrowSize*.6,-arrowSize*.55); c.lineTo(-arrowSize*.6,arrowSize*.55); c.closePath();
   c.fillStyle=arrowColor; c.fill(); c.restore();
 }
-// ── 결과 ──
+// ── 결과 판정 ──
 function vsFinish(){
-  if(vsState==='over') return;
-  vsState='over';
-  clearInterval(vsPushTimer); vsPushTimer=null;
-  clearInterval(vsPollTimer); vsPollTimer=null;
-  if(vsRAF){ cancelAnimationFrame(vsRAF); vsRAF=null; }
-  const iWon = vsOpp.dead && !vsMe.dead;
-  const draw = vsMe.dead && vsOpp.dead;
-  const rt=document.getElementById('vsResultText'), rs=document.getElementById('vsResultScore');
-  if(draw){ rt.textContent='무승부'; rt.style.color='#FFD600'; }
-  else if(iWon){ rt.textContent='승리!'; rt.style.color='#00FFB0'; }
-  else { rt.textContent='패배'; rt.style.color='#FF3355'; }
-  rs.textContent = '내 점수 ' + vsMe.score + '  ·  상대 ' + vsOpp.score;
-  document.getElementById('vsRematchMsg').style.display='none';
-  document.getElementById('vsResult').style.display='flex';
+  if(vsPhase==='over') return;
+  vsPhase='over';
+  _vsStopTimers();
+  vsPush();
+  const m=vsMode||{};
+  let title, color, sub='내 점수 '+vsMe.score+'  ·  상대 '+vsOpp.score;
+  if(m.game==='avoid'){
+    if(vsMe.dead && vsOpp.dead){ title='무승부'; color='#FFD600'; }
+    else if(vsOpp.dead){ title='승리!'; color='#00FFB0'; }
+    else { title='패배'; color='#FF3355'; }
+  } else {
+    // 디펜스: 점수 비교 (보스는 둘 다 클리어 시 무승부)
+    if(vsMe.score>vsOpp.score){ title='승리!'; color='#00FFB0'; }
+    else if(vsMe.score<vsOpp.score){ title='패배'; color='#FF3355'; }
+    else { title='무승부'; color='#FFD600'; }
+  }
+  const rt=_vsEl('vsResultText'), rs=_vsEl('vsResultScore');
+  rt.textContent=title; rt.style.color=color; rs.textContent=sub;
+  _vsEl('vsBackBtn').textContent = vsAuto ? '메인화면으로' : '방으로 돌아가기';
+  _vsEl('vsResult').style.display='flex';
 }
-function vsRematch(){
-  document.getElementById('vsRematchMsg').style.display='block';
-  vsRpc('vs_reset', { p_code:vsRoom }).then(()=>{
-    document.getElementById('vsResult').style.display='none';
-    vsStartBattle();
-  });
+// 결과 후 복귀: 자동 매칭 → 메인 / 방 → 대기실
+async function vsAfterResult(){
+  _vsEl('vsResult').style.display='none';
+  _vsEl('vsBattle').style.display='none';
+  if(vsAuto){ vsExit(); return; }
+  await vsRpc('vs_reset', { p_code:vsRoom }).catch(()=>{});
+  _vsEl('vsLobby').style.display='flex';
+  vsPhase='waiting';
+  _vsEnterWaiting(true);
 }
 
 // 관리자 패널 열기: 메인화면에서 '관리자'(또는 영문 자판 그대로 'rhksflwk')를 치고 Enter
