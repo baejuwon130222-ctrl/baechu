@@ -885,7 +885,16 @@ let lastSpawn=0, shake=0, corePulse=0, beamColor='#FF3355';
 
 const _keys=['chill','normal','hard','expert','twin','twinHard','twinExpert','boss','bossHard'];
 let best={};
-for(const k of _keys){ try{ best[k]=parseInt(localStorage.getItem('dtl_'+k))||0; }catch(e){ best[k]=0; } }
+function _dtlBestPrefix(){
+  let who='guest';
+  try{ const a=JSON.parse(localStorage.getItem('atl_acct')); if(a && a.nick) who=a.nick; }catch(e){}
+  return 'dtl_'+who+'_';
+}
+function _dtlLoadBest(){
+  const pre=_dtlBestPrefix();
+  for(const k of _keys){ try{ best[k]=parseInt(localStorage.getItem(pre+k))||0; }catch(e){ best[k]=0; } }
+}
+_dtlLoadBest();
 
 // ── 별밭 배경 ──
 function buildStars(){
@@ -1081,6 +1090,7 @@ function dtlToggleFullscreen(){  const d=document, isFs=d.fullscreenElement||d.w
 function dtlOpenLeaderboard(){ try{ window.parent.postMessage({type:'lb-open', game:'deflect'}, '*'); }catch(e){} }
 function _dtlLbReport(sc){ try{ if(['expert','twinHard','twinExpert','boss'].includes(currentMode)) window.parent.postMessage({type:'lb-report', game:'deflect', mode:currentMode, score:sc}, '*'); }catch(e){} }
 function _dtlLbRound(sc){ try{ window.parent.postMessage({type:'lb-round', game:'deflect', mode:currentMode, score:sc}, '*'); }catch(e){} }
+function _dtlActivity(mode, sc){ try{ window.parent.postMessage({type:'lb-activity', game:mode?'deflect':'', mode:mode||'', score:sc||0}, '*'); }catch(e){} }
 function dtlKeyLabel(k){ const m={'ArrowLeft':'←','ArrowRight':'→','ArrowUp':'↑','ArrowDown':'↓',' ':'Space','Enter':'Enter'}; if(m[k]) return m[k]; return k && k.length===1 ? k.toUpperCase() : k; }
 function dtlPressed(k){ if(keys[k]) return true; if(k && k.length===1) return !!(keys[k.toLowerCase()]||keys[k.toUpperCase()]); return false; }
 // 게임 조작 팝업
@@ -1465,6 +1475,7 @@ function resumeGame(){ if(state!=='paused')return; hide(pausePanel); countdown(f
 function restart(){ hide(overPanel); startRun(true); }
 function toMenu(){
   state='menu'; beams=[]; particles=[]; waves=[];
+  if(typeof _dtlActivity==='function') _dtlActivity('', 0);
   clearInterval(cdTimer); cdTimer=null; hide(countdownEl); countdownLocked=false;
   if(typeof _dtutClear==='function'){ _dtutClear(); dtut=null; dtutFreeze=false; _dtutMsgHide(); _dtutBig(); }
   if(bossWrap) bossWrap.style.display='none';
@@ -1478,7 +1489,7 @@ function gameOver(){
   if(currentMode!=='dtutorial') _dtlLbRound(score);          // 모든 라운드 기록
   if(currentMode!=='dtutorial' && score>(best[currentMode]||0)){
     best[currentMode]=score;
-    try{ localStorage.setItem('dtl_'+currentMode,String(score)); }catch(e){}
+    try{ localStorage.setItem(_dtlBestPrefix()+currentMode,String(score)); }catch(e){}
     document.getElementById('overNB').classList.remove('hidden');
     _dtlLbReport(score);
   } else document.getElementById('overNB').classList.add('hidden');
@@ -1498,7 +1509,7 @@ function gameWin(){
   if(currentMode!=='dtutorial') _dtlLbRound(score);          // 모든 라운드 기록
   if(currentMode!=='dtutorial' && score>(best[currentMode]||0)){
     best[currentMode]=score;
-    try{ localStorage.setItem('dtl_'+currentMode,String(score)); }catch(e){}
+    try{ localStorage.setItem(_dtlBestPrefix()+currentMode,String(score)); }catch(e){}
     document.getElementById('overNB').classList.remove('hidden');
     _dtlLbReport(score);
   } else document.getElementById('overNB').classList.add('hidden');
@@ -1602,6 +1613,7 @@ function doBlock(b){
   else { pts=10; tier='GOOD'; col='#00FFB0'; }
   const gain=pts*mult;
   score+=gain; scoreEl.textContent=score;
+  if(typeof _dtlActivity==='function' && currentMode!=='dtutorial') _dtlActivity(currentMode, score);
   addHeat(tier);
   corePulse=1; shake=Math.max(shake, tier==='PERFECT'?7:4); sfxDeflect();
   const px=cx+Math.cos(b.dir)*b.r, py=cy+Math.sin(b.dir)*b.r;
@@ -2062,13 +2074,23 @@ const bestVal = document.getElementById('bestVal');
 const newBest = document.getElementById('newBest');
 // 최고 점수: 브라우저에 저장(파일을 직접 열어 플레이할 때 유지됨)
 const bestLabel = document.getElementById('bestLabel');
-// 모드별 최고 점수: 각 모드를 따로 저장 (파일을 직접 열어 플레이할 때 유지됨)
+// 모드별 최고 점수: 계정마다 따로 저장 (계정을 바꾸면 그 계정의 기록만 보임)
 let currentMode = 'normal';
 const _modeKeys = ['tutorial','normal','hard','expert','normal_blind','hard_blind','powerlaser'];
 let bestScores = {};
-for (const k of _modeKeys) {
-  try { bestScores[k] = parseInt(localStorage.getItem('atl_best_' + k)) || 0; } catch (e) { bestScores[k] = 0; }
+function _bestKeyPrefix() {
+  let who = 'guest';
+  try { const a = JSON.parse(localStorage.getItem('atl_acct')); if (a && a.nick) who = a.nick; } catch (e) {}
+  return 'atl_best_' + who + '_';
 }
+function _loadBestScores() {
+  const pre = _bestKeyPrefix();
+  for (const k of _modeKeys) {
+    try { bestScores[k] = parseInt(localStorage.getItem(pre + k)) || 0; } catch (e) { bestScores[k] = 0; }
+  }
+  if (typeof _updateBestDisplay === 'function') _updateBestDisplay();
+}
+_loadBestScores();
 function _modeLabel(m) {
   if (m === 'powerlaser') return 'POWERFUL LASER';
   return m.endsWith('_blind') ? m.replace('_blind','').toUpperCase() + ' · BLIND' : m.toUpperCase();
@@ -2653,7 +2675,7 @@ function checkPassed() {
   const { tx, ty, cx, cy } = getArrowPos();
   const ar = Math.sqrt((tx-cx)**2 + (ty-cy)**2);
   for (const ring of rings) {
-    if (!ring.passed && ring.r < ar - 2) { ring.passed = true; score += 10; scoreVal.textContent = score; spawnPassFX(tx, ty); }
+    if (!ring.passed && ring.r < ar - 2) { ring.passed = true; score += 10; scoreVal.textContent = score; spawnPassFX(tx, ty); if (typeof lbSetActivity === 'function') lbSetActivity('avoid', currentMode, score); }
   }
 }
 
@@ -2824,10 +2846,11 @@ function gameOver() {
   const { tx, ty } = getArrowPos();
   spawnDeathFX(tx, ty);    // 충돌 지점에서 폭발 + 강한 흔들림 + 붉은 플래시
   rings = [];
+  if (typeof lbSetActivity === 'function') lbSetActivity('', '', 0);   // 게임 종료 → 대기 상태
   if (currentMode !== 'tutorial') lbLogRound('avoid', currentMode, score);   // 모든 라운드 기록
   if (currentMode !== 'tutorial' && score > (bestScores[currentMode] || 0)) {
     bestScores[currentMode] = score;
-    try { localStorage.setItem('atl_best_' + currentMode, String(score)); } catch (e) {}
+    try { localStorage.setItem(_bestKeyPrefix() + currentMode, String(score)); } catch (e) {}
     if (bestVal) bestVal.textContent = score;
     if (newBest) newBest.style.display = 'block';
     lbReportAvoid(currentMode, score);        // 신기록이면 리더보드에 등록
@@ -2847,6 +2870,7 @@ function startGame() {
     return;
   }
   startBox.style.display = 'none'; rings = []; score = 0;
+  if (typeof lbSetActivity === 'function') lbSetActivity('avoid', currentMode, 0);
   if (gameNav) gameNav.style.display = 'none';                 // 플레이 중엔 메뉴 숨김
   if (mobileControlsEl) mobileControlsEl.style.display = (deviceMode === 'mobile') ? 'flex' : 'none';
   clearFX();                 // 이전 사망 파티클·흔들림·플래시 제거
@@ -3367,7 +3391,7 @@ function _lbEsc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&l
 // ── 게스트 모드 & 로그인 전 기록 보관(로그인 시 자동 등록) ──
 let _guest = false;
 try{ _guest = localStorage.getItem('atl_guest')==='1'; }catch(e){}
-function useGuest(){ _guest=true; try{ localStorage.setItem('atl_guest','1'); }catch(e){} _authHideAll(); }
+function useGuest(){ _guest=true; acct=null; try{ localStorage.setItem('atl_guest','1'); localStorage.removeItem('atl_acct'); }catch(e){} if(typeof _loadBestScores==='function') _loadBestScores(); _authHideAll(); }
 function _pendingGet(){ try{ return JSON.parse(localStorage.getItem('atl_pending'))||{}; }catch(e){ return {}; } }
 function _pendingSet(o){ try{ localStorage.setItem('atl_pending', JSON.stringify(o)); }catch(e){} }
 function _recordPending(game, mode, score){ const o=_pendingGet(); const k=game+':'+mode; if(!(k in o) || score>o[k]) o[k]=score; _pendingSet(o); }
@@ -3392,6 +3416,7 @@ function _setAccount(nick, token, persist){
     else { localStorage.removeItem('atl_acct'); localStorage.setItem('atl_autologin','0'); }
   }catch(e){}
   lbUpdateNickLabel(); _refreshAcctSettings();
+  if (typeof _loadBestScores === 'function') _loadBestScores();   // 계정별 최고점수로 교체
   _flushPending();   // 로그인 전 게스트로 낸 기록을 리더보드에 자동 등록
 }
 async function doSignup(){
@@ -3479,25 +3504,37 @@ async function adminLoad(){
 }
 function _adminRender(rows){
   const list=document.getElementById('adminList'), info=document.getElementById('adminInfo');
-  // 같은 기기(device)에서 만든 계정 묶기
   const byDev={};
   for(const r of rows){ const d=r.device||''; if(!d) continue; (byDev[d]=byDev[d]||[]).push(r.nick); }
   const dupDevs=Object.keys(byDev).filter(d=>byDev[d].length>1);
   const dupNicks=new Set(); for(const d of dupDevs) for(const n of byDev[d]) dupNicks.add(n);
-  info.textContent='계정 '+rows.length+'개 · 같은 기기에서 여러 계정을 만든 경우 '+dupDevs.length+'건 (⚠ 표시)';
+  const now=Date.now();
+  const isOnline=(r)=> r.last_seen ? (now - new Date(r.last_seen).getTime() < 60000) : false;   // 1분 이내
+  const onlineCount=rows.filter(isOnline).length;
+  info.textContent='계정 '+rows.length+'개 · 접속 중 '+onlineCount+'명 · 같은 기기 중복 '+dupDevs.length+'건 (⚠)';
   list.innerHTML='';
   if(!rows.length){ list.innerHTML='<div style="color:#888; font-size:12px; padding:20px; text-align:center;">계정이 없어요.</div>'; return; }
+  const gl={avoid:'피하기', deflect:'디펜스'};
   for(const r of rows){
     const dup=dupNicks.has(r.nick);
+    const on=isOnline(r);
     const sameDev = r.device ? (byDev[r.device]||[]).filter(n=>n!==r.nick) : [];
+    let act='';
+    if(on){
+      act = r.cur_game ? ('🎮 '+(gl[r.cur_game]||r.cur_game)+' · '+_lbEsc(r.cur_mode||'')+' · '+(r.cur_score||0)+'점') : '대기 중 (메뉴)';
+    } else if(r.last_seen){
+      act = '마지막 접속: ' + new Date(r.last_seen).toLocaleString('ko-KR');
+    } else act='접속 기록 없음';
     const wrap=document.createElement('div');
     wrap.style.cssText='border-bottom:1px solid #1a1a1a; padding:8px 12px;';
     const row=document.createElement('div');
     row.style.cssText='display:flex; align-items:center; gap:8px;';
     row.innerHTML=
+      '<div style="width:9px; height:9px; border-radius:50%; flex-shrink:0; background:'+(on?'#3BD671':'#555')+';'+(on?'box-shadow:0 0 6px #3BD671;':'')+'"></div>'+
       '<div style="flex:1; min-width:0;">'+
         '<div style="color:'+(dup?'#FFD600':'#fff')+'; font-size:13px;">'+(dup?'⚠ ':'')+_lbEsc(r.nick)+'</div>'+
-        '<div style="color:#666; font-size:10px; margin-top:2px;">기기: '+_lbEsc(r.device||'(없음)')+
+        '<div style="color:'+(on?'#3BD671':'#666')+'; font-size:10px; margin-top:2px;">'+act+'</div>'+
+        '<div style="color:#555; font-size:10px; margin-top:1px;">기기: '+_lbEsc(r.device||'(없음)')+
           (sameDev.length?(' · 같은 기기: '+_lbEsc(sameDev.join(', '))):'')+'</div>'+
       '</div>';
     const mk=(txt,col,fn)=>{ const b=document.createElement('button'); b.textContent=txt;
@@ -3513,6 +3550,14 @@ function _adminRender(rows){
     list.appendChild(wrap);
   }
 }
+// 관리자 패널이 열려 있는 동안 20초마다 자동 새로고침(온라인 상태 갱신)
+setInterval(async ()=>{
+  const ap=document.getElementById('adminPanel');
+  const body=document.getElementById('adminBody');
+  if(!ap || ap.style.display!=='flex' || !body || body.style.display!=='flex' || !_adminPass) return;
+  const res=await _adminRpc('admin_list');
+  if(res.ok) _adminRender(res.data||[]);
+}, 20000);
 // 계정의 모든 라운드 내역 보기
 async function adminHistory(nick, box){
   if(box.style.display==='block'){ box.style.display='none'; return; }
@@ -3645,6 +3690,21 @@ async function lbRenderList(game, mode){
   }
 }
 
+// ── 접속 상태(하트비트): 관리자에게 온라인 여부·현재 플레이 상태 표시 ──
+let _hbGame='', _hbMode='', _hbScore=0;
+function lbSetActivity(game, mode, score){ _hbGame=game||''; _hbMode=mode||''; _hbScore=score||0; }
+async function _sendHeartbeat(){
+  if(!lbOn() || !acct || !acct.token) return;
+  try{
+    await fetch(LB_URL + '/rest/v1/rpc/lb_ping', {
+      method:'POST', headers:{ 'apikey':LB_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify({ p_nick:acct.nick, p_token:acct.token, p_game:_hbGame, p_mode:_hbMode, p_score:_hbScore })
+    });
+  }catch(e){}
+}
+setInterval(_sendHeartbeat, 15000);   // 15초마다
+setTimeout(_sendHeartbeat, 1500);     // 접속 직후 한 번
+
 // 모든 라운드 기록(플레이할 때마다) — 관리자 조회용
 async function lbLogRound(game, mode, score){
   if(!lbOn() || !acct || !acct.token) return;
@@ -3672,6 +3732,8 @@ window.addEventListener('message', (e)=>{
     else _recordPending('deflect', d.mode, d.score);
   } else if(d.type==='lb-round' && d.game==='deflect'){
     lbLogRound('deflect', d.mode, d.score);
+  } else if(d.type==='lb-activity'){
+    lbSetActivity(d.game, d.mode, d.score);
   } else if(d.type==='lb-open'){
     lbOpen(d.game||'avoid', d.mode);
   }
