@@ -499,7 +499,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <div style="display:flex; align-items:baseline; gap:10px;">
           <div style="color:#FF8C00; font-size:16px; font-weight:600;">🔐 관리자</div>
-          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD C8N3P6HR</div>
+          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD J4X7D9LB</div>
         </div>
         <button onclick="adminClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
       </div>
@@ -3739,6 +3739,196 @@ async function adminDelete(nick){
   const again=await _adminRpc('admin_list');
   if(again.ok) _adminRender(again.data||[]);
 }
+// ═══ 디펜스 대전 엔진 (분할 화면용 · 부모 창에서 실행) ═══
+const DVS_MODES = {
+  expert:     { cross:1.05, interval:0.78, tele:0.42, accent:'#FF3355', kind:'normal' },
+  bossHard:   { cross:1.78, interval:1.34, tele:0.74, accent:'#B36BFF', kind:'boss', bossPace:[1,1,0.95,0.85], easyBoss:true },
+  boss:       { cross:1.50, interval:1.10, tele:0.60, accent:'#FF3355', kind:'boss' },
+  twinHard:   { cross:1.15, interval:0.50, tele:0.42, accent:'#FF8C00', kind:'twin', dense:true },
+  twinExpert: { cross:1.30, interval:1.30, tele:0.52, accent:'#FF8C00', kind:'twin', expert:true }
+};
+const DVS_CORE_R=11, DVS_SHIELD_HALF=0.5, DVS_ROT=7.0;
+const DVS_BOSS_HP=100;
+
+function dvsNew(){
+  return { angle:0, beams:[], score:0, mult:1, hp:2, maxHP:2, dead:false, done:false,
+           lastSpawn:0, invuln:0, bossHP:DVS_BOSS_HP, bossAng:-Math.PI/2, bossPhase:1, bossPace:1,
+           bossAlive:false, won:false, deflects:0, waves:[] };
+}
+function dvsGeo(cv){
+  const w=cv.width, h=cv.height, s=Math.min(w,h);
+  return { w,h,cx:w/2,cy:h/2, AR:s*0.46, SR:s*0.30, BW:Math.max(6,s*0.055), CR:Math.max(6,s*0.035) };
+}
+function dvsInit(p, m){
+  p.maxHP = (m.kind==='boss'||m.kind==='twin') ? 3 : 2;
+  p.hp = p.maxHP;
+  p.bossAlive = (m.kind==='boss');
+  p.bossHP = DVS_BOSS_HP;
+  p.bossPhase = 1; p.bossPace = 1;
+}
+function dvsDiff(p){ return 1 - Math.min(0.25, p.score/5000); }
+function dvsAngDiff(a,b){ let d=(a-b)%(Math.PI*2); if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2; return d; }
+function dvsCovers(p,a,m){
+  if(Math.abs(dvsAngDiff(a,p.angle))<=DVS_SHIELD_HALF) return true;
+  if(m.kind==='twin' && Math.abs(dvsAngDiff(a,p.angle+Math.PI))<=DVS_SHIELD_HALF) return true;
+  return false;
+}
+function dvsSpawn(p, m, G){
+  const mk=(a)=>({ a, r:G.AR, state:'tele', tele:m.tele*dvsDiff(p), spd:0 });
+  if(m.kind==='boss'){
+    const base = p.bossAng;
+    const pats = p.bossPhase===1 ? ['single','pair'] :
+                 p.bossPhase===2 ? ['pair','cross'] :
+                 (m.easyBoss ? ['pair','cross'] : ['cross','rapid']);
+    const pat = pats[Math.floor(Math.random()*pats.length)];
+    if(pat==='single') p.beams.push(mk(base+(Math.random()-0.5)*0.3));
+    else if(pat==='pair'){ p.beams.push(mk(base-0.35)); p.beams.push(mk(base+0.35)); }
+    else if(pat==='cross'){ p.beams.push(mk(base)); p.beams.push(mk(base+Math.PI)); }
+    else { for(let i=0;i<3;i++) p.beams.push(mk(base+(i-1)*0.5)); }
+  } else if(m.kind==='twin'){
+    const a=Math.random()*Math.PI*2;
+    p.beams.push(mk(a));
+    if(m.dense || m.expert) p.beams.push(mk(a+Math.PI+(Math.random()-0.5)*0.6));
+  } else {
+    p.beams.push(mk(Math.random()*Math.PI*2));
+  }
+}
+// 한 플레이어의 한 프레임 진행 (내 쪽에서만 호출)
+function dvsStep(p, m, G, dt, now, keysFn){
+  if(p.dead || p.done) return;
+  // 회전
+  let dir=0;
+  if(keysFn.left()) dir-=1;
+  if(keysFn.right()) dir+=1;
+  p.angle += dir*DVS_ROT*dt;
+  if(p.invuln>0) p.invuln-=dt;
+  // 보스 이동
+  if(m.kind==='boss' && p.bossAlive) p.bossAng += 0.5*dt*p.bossPace;
+  // 스폰
+  const gap = (m.kind==='boss' ? m.interval*p.bossPace : m.interval*dvsDiff(p))*1000;
+  if(now-p.lastSpawn > gap){ dvsSpawn(p,m,G); p.lastSpawn=now; }
+  // 빔 진행
+  for(let i=p.beams.length-1;i>=0;i--){
+    const b=p.beams[i];
+    if(b.state==='tele'){
+      b.tele-=dt;
+      if(b.tele<=0){ b.state='active'; b.r=G.AR; }
+      continue;
+    }
+    if(b.state==='out'){ b.r += (G.AR/m.cross)*dt*2.2; if(b.r>G.AR*1.3) p.beams.splice(i,1); continue; }
+    b.r -= (G.AR/m.cross)*dt;
+    // 방패에 막힘
+    const inBand = b.r <= G.SR+G.BW/2 && b.r >= G.SR-G.BW/2;
+    if(inBand && dvsCovers(p,b.a,m)){
+      b.state='out';
+      const near = 1 - Math.abs(b.r-(G.SR-G.BW/2))/G.BW;   // 안쪽에서 막을수록 고득점
+      const gain = Math.round((10 + near*10) * p.mult);
+      p.score += gain; p.deflects++;
+      if(p.deflects%8===0) p.mult=Math.min(5,p.mult+1);
+      p.waves.push({ x:G.cx+Math.cos(b.a)*G.SR, y:G.cy+Math.sin(b.a)*G.SR, r:6, life:0.45 });
+      // 보스 피해
+      if(m.kind==='boss' && p.bossAlive){
+        p.bossHP -= 4;
+        if(p.bossHP<=0){ p.bossHP=0; p.bossAlive=false; p.done=true; p.won=true; }
+        else {
+          const ratio=p.bossHP/DVS_BOSS_HP, np = ratio>0.66?1 : ratio>0.33?2 : 3;
+          if(np>p.bossPhase){ p.bossPhase=np; p.bossPace=(m.bossPace||[1,1,0.85,0.72])[np]; }
+        }
+      }
+      continue;
+    }
+    // 코어 피격
+    if(b.r <= G.CR*1.2){
+      p.beams.splice(i,1);
+      if(p.invuln>0) continue;
+      p.hp--; p.mult=1; p.invuln=0.9;
+      if(p.hp<=0){ p.hp=0; p.dead=true; }
+      continue;
+    }
+  }
+  for(const w of p.waves){ w.r += G.AR*1.6*dt; w.life -= dt*2; }
+  p.waves = p.waves.filter(w=>w.life>0);
+}
+// 그리기
+function dvsDraw(cv, p, m, isMe){
+  const wrap=cv.parentElement;
+  const w=wrap.clientWidth, h=wrap.clientHeight;
+  if(!w||!h) return;
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+  const G=dvsGeo(cv), c=cv.getContext('2d');
+  c.clearRect(0,0,w,h);
+  const ac = isMe ? (m.accent||'#00FFB0') : '#FF8C00';
+  // 글로우
+  c.save(); c.globalCompositeOperation='lighter';
+  const g=c.createRadialGradient(G.cx,G.cy,0,G.cx,G.cy,G.AR*1.4);
+  g.addColorStop(0, ac+'14'); g.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=g; c.fillRect(0,0,w,h); c.restore();
+  // 보스 링
+  if(m.kind==='boss' && p.bossAlive){
+    c.save(); c.globalCompositeOperation='lighter'; c.translate(G.cx,G.cy);
+    c.strokeStyle=ac+'44'; c.lineWidth=3; c.beginPath(); c.arc(0,0,G.AR,0,Math.PI*2); c.stroke();
+    const bx=Math.cos(p.bossAng)*G.AR, by=Math.sin(p.bossAng)*G.AR;
+    c.fillStyle=ac; c.beginPath(); c.arc(bx,by,G.BW*0.55,0,Math.PI*2); c.fill();
+    c.restore();
+    // 보스 HP 바
+    const bw=w*0.5, bx0=(w-bw)/2;
+    c.fillStyle='rgba(255,255,255,0.12)'; c.fillRect(bx0, 8, bw, 5);
+    c.fillStyle=ac; c.fillRect(bx0, 8, bw*(p.bossHP/DVS_BOSS_HP), 5);
+  }
+  // 밴드
+  c.save(); c.setLineDash([3,6]); c.globalAlpha=0.5; c.lineWidth=1;
+  c.strokeStyle='rgba(0,255,176,0.6)'; c.beginPath(); c.arc(G.cx,G.cy,G.SR+G.BW/2,0,Math.PI*2); c.stroke();
+  c.strokeStyle='rgba(255,214,0,0.5)'; c.beginPath(); c.arc(G.cx,G.cy,G.SR-G.BW/2,0,Math.PI*2); c.stroke();
+  c.restore();
+  // 빔
+  for(const b of p.beams){
+    if(b.state==='tele'){
+      c.save(); c.globalAlpha=0.35; c.strokeStyle=ac; c.lineWidth=1; c.setLineDash([4,4]);
+      c.beginPath(); c.moveTo(G.cx+Math.cos(b.a)*G.AR, G.cy+Math.sin(b.a)*G.AR);
+      c.lineTo(G.cx+Math.cos(b.a)*G.CR, G.cy+Math.sin(b.a)*G.CR); c.stroke(); c.restore();
+      continue;
+    }
+    const len=G.AR*0.16, col = b.state==='out' ? '#ffffff' : ac;
+    const x1=G.cx+Math.cos(b.a)*b.r, y1=G.cy+Math.sin(b.a)*b.r;
+    const x2=G.cx+Math.cos(b.a)*(b.r+len), y2=G.cy+Math.sin(b.a)*(b.r+len);
+    c.save(); c.globalCompositeOperation='lighter'; c.lineCap='round';
+    c.strokeStyle=col; c.globalAlpha=0.3; c.lineWidth=8; c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+    c.globalAlpha=0.95; c.lineWidth=2.6; c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+    c.restore();
+  }
+  // 충격파
+  c.save(); c.globalCompositeOperation='lighter';
+  for(const wv of p.waves){
+    c.globalAlpha=Math.max(0,wv.life)*1.6; c.strokeStyle=ac; c.lineWidth=2;
+    c.beginPath(); c.arc(wv.x,wv.y,wv.r,0,Math.PI*2); c.stroke();
+  }
+  c.restore();
+  // 코어
+  c.save(); c.globalCompositeOperation='lighter';
+  const cg=c.createRadialGradient(G.cx,G.cy,0,G.cx,G.cy,G.CR*3.5);
+  cg.addColorStop(0,'rgba(255,255,255,0.95)'); cg.addColorStop(0.35,'rgba(0,255,176,0.5)'); cg.addColorStop(1,'rgba(0,255,176,0)');
+  c.fillStyle=cg; c.beginPath(); c.arc(G.cx,G.cy,G.CR*3.5,0,Math.PI*2); c.fill(); c.restore();
+  c.fillStyle='#fff'; c.beginPath(); c.arc(G.cx,G.cy,G.CR,0,Math.PI*2); c.fill();
+  // 방패
+  const drawShield=(a)=>{
+    c.save(); c.globalCompositeOperation='lighter'; c.lineCap='butt';
+    c.strokeStyle=ac+'33'; c.lineWidth=G.BW;
+    c.beginPath(); c.arc(G.cx,G.cy,G.SR,a-DVS_SHIELD_HALF,a+DVS_SHIELD_HALF); c.stroke();
+    c.strokeStyle=ac; c.lineWidth=3; c.lineCap='round';
+    c.beginPath(); c.arc(G.cx,G.cy,G.SR+G.BW/2,a-DVS_SHIELD_HALF,a+DVS_SHIELD_HALF); c.stroke();
+    c.strokeStyle='rgba(255,214,0,0.9)'; c.lineWidth=3;
+    c.beginPath(); c.arc(G.cx,G.cy,G.SR-G.BW/2,a-DVS_SHIELD_HALF,a+DVS_SHIELD_HALF); c.stroke();
+    c.restore();
+  };
+  drawShield(p.angle);
+  if(m.kind==='twin') drawShield(p.angle+Math.PI);
+  // HP / 배율
+  c.fillStyle='#fff'; c.font='11px sans-serif'; c.textAlign='left';
+  let hearts=''; for(let i=0;i<p.maxHP;i++) hearts += (i<p.hp?'♥':'♡');
+  c.fillStyle='#FF3355'; c.fillText(hearts, 8, h-10);
+  c.fillStyle='#FFD600'; c.textAlign='right'; c.fillText('x'+p.mult, w-8, h-10);
+}
+
 // ═══════════════ 대전 (VERSUS) ═══════════════
 // 흐름: 로비 → (방/자동매칭) → 대기실 → 모드 투표(10초) → 3·2·1 → 동시 플레이 → 승패 → 복귀
 // 피하기: 먼저 죽는 사람 패배 / 디펜스: 먼저 죽어도 점수 기준으로 판정 (보스는 예외)
@@ -3991,8 +4181,14 @@ function vsStartBattle(){
   _vsEl('vsMeScore').textContent='0';
   _vsEl('vsOppScore').textContent='0';
   _vsEl('vsModeLabel').textContent = m.label+' · '+m.kind+' · '+m.diff;
-  vsMe={ angle:0, rings:[], score:0, dead:false, last:0, done:false };
-  vsOpp={ angle:0, rings:[], score:0, dead:false, done:false };
+  if(m.game==='deflect'){
+    const dm = DVS_MODES[m.dmode] || DVS_MODES.expert;
+    vsMe = dvsNew(); vsOpp = dvsNew();
+    dvsInit(vsMe, dm); dvsInit(vsOpp, dm);
+  } else {
+    vsMe={ angle:0, rings:[], score:0, dead:false, last:0, done:false };
+    vsOpp={ angle:0, rings:[], score:0, dead:false, done:false };
+  }
   vsPhase='countdown';
   try{ startMusic('game'); }catch(e){}
   let n=3;
@@ -4040,8 +4236,18 @@ function _vsOnState(s){
   if(!s) return;
   _vsOppTargetAngle = s.a||0;
   vsOpp.score = s.s||0; vsOpp.dead = !!s.d; vsOpp.done = !!s.f;
-  const nr = (s.r||[]).map(x=>({ r:x[0], gapAngle:x[1] }));
-  vsOpp.rings = nr;
+  if(s.b){   // 디펜스
+    vsOpp.beams = (s.b||[]).map(x=>({ r:x[0], a:x[1], state: x[2]===0?'tele':(x[2]===2?'out':'active'), tele:0.2 }));
+    if(typeof s.hp==='number') vsOpp.hp=s.hp;
+    if(typeof s.mx==='number') vsOpp.maxHP=s.mx;
+    if(typeof s.ml==='number') vsOpp.mult=s.ml;
+    if(typeof s.bh==='number') vsOpp.bossHP=s.bh;
+    if(typeof s.ba==='number') vsOpp.bossAng=s.ba;
+    vsOpp.bossAlive=!!s.bv; vsOpp.won=!!s.w;
+    if(!vsOpp.waves) vsOpp.waves=[];
+  } else {   // 피하기
+    vsOpp.rings = (s.r||[]).map(x=>({ r:x[0], gapAngle:x[1] }));
+  }
   _vsOppRecvTs = performance.now();
   const el=_vsEl('vsOppScore'); if(el) el.textContent=vsOpp.score;
   if(vsOpp.dead){ const d=_vsEl('vsOppDead'); if(d) d.style.display='flex'; }
@@ -4049,9 +4255,17 @@ function _vsOnState(s){
 }
 async function vsPush(){
   if(!vsRoom || (vsPhase!=='playing' && vsPhase!=='over')) return;
-  const st={ a:Math.round(vsMe.angle*100)/100, s:vsMe.score, d:vsMe.dead, f:vsMe.done,
-             r:vsMe.rings.map(x=>[Math.round(x.r), Math.round(x.gapAngle*100)/100]) };
-  // Realtime이 열려 있으면 즉시 전송(빠름), 아니면 서버 저장(폴백)
+  const m=vsMode||{};
+  let st;
+  if(m.game==='deflect'){
+    st={ a:Math.round(vsMe.angle*100)/100, s:vsMe.score, d:vsMe.dead, f:vsMe.done,
+         hp:vsMe.hp, mx:vsMe.maxHP, ml:vsMe.mult, bh:vsMe.bossHP, ba:Math.round(vsMe.bossAng*100)/100,
+         bv:vsMe.bossAlive, w:vsMe.won,
+         b:vsMe.beams.map(x=>[Math.round(x.r), Math.round(x.a*100)/100, x.state==='tele'?0:(x.state==='out'?2:1)]) };
+  } else {
+    st={ a:Math.round(vsMe.angle*100)/100, s:vsMe.score, d:vsMe.dead, f:vsMe.done,
+         r:vsMe.rings.map(x=>[Math.round(x.r), Math.round(x.gapAngle*100)/100]) };
+  }
   if(vsChan){
     try{ vsChan.send({ type:'broadcast', event:'st', payload:st }); return; }catch(e){}
   }
@@ -4083,15 +4297,65 @@ async function vsPull(){
 function _vsShouldFinish(){
   const m=vsMode||{};
   if(m.game==='avoid') return vsMe.dead || vsOpp.dead;           // 먼저 죽으면 끝
-  // 디펜스: 둘 다 끝나야 판정 (점수 비교). 단 보스는 둘 다 끝날 때까지 대기.
-  return (vsMe.dead||vsMe.done) && (vsOpp.dead||vsOpp.done);
+  // 디펜스
+  const meEnd = vsMe.dead || vsMe.done, opEnd = vsOpp.dead || vsOpp.done;
+  if(m.kind==='보스'){
+    return meEnd && opEnd;                                       // 보스: 둘 다 끝나야 판정(둘 다 클리어=무승부)
+  }
+  if(meEnd && opEnd) return true;
+  // 한 명만 죽었을 때: 죽은 사람 점수가 살아있는 사람보다 낮으면 즉시 끝(죽은 사람 패배)
+  if(meEnd && !opEnd && vsMe.score <= vsOpp.score) return true;
+  if(opEnd && !meEnd && vsOpp.score <= vsMe.score) return true;
+  // 죽은 사람 점수가 더 높으면: 상대가 그 점수를 넘거나 죽을 때까지 계속
+  return false;
 }
 // 상대 각도 부드럽게 보간(끊김 완화)
 function vsLoop(ts){
   if(vsPhase!=='playing'){ vsRAF=null; return; }
   let dtf=1; if(_vsLastTs) dtf=Math.min((ts-_vsLastTs)/(1000/60),3);
+  const dt=Math.min((ts-(_vsLastTs||ts))/1000, 0.05);
   _vsLastTs=ts;
   const m=vsMode||vsModeById('a_expert');
+
+  // ── 디펜스 대전 ──
+  if(m.game==='deflect'){
+    const dm = DVS_MODES[m.dmode] || DVS_MODES.expert;
+    const meCv=_vsEl('vsMeCanvas'), opCv=_vsEl('vsOppCanvas');
+    // 캔버스 크기 확보
+    [meCv,opCv].forEach(cv=>{ const wr=cv.parentElement; if(cv.width!==wr.clientWidth||cv.height!==wr.clientHeight){ cv.width=wr.clientWidth; cv.height=wr.clientHeight; } });
+    const G=dvsGeo(meCv);
+    if(!vsMe.lastSpawn) vsMe.lastSpawn=ts;
+    dvsStep(vsMe, dm, G, dt, ts, {
+      left: ()=> (_isPressed(keyBind.ccw1)||_isPressed(keyBind.ccw2)||touchLeft),
+      right:()=> (_isPressed(keyBind.cw1) ||_isPressed(keyBind.cw2) ||touchRight)
+    });
+    _vsEl('vsMeScore').textContent = vsMe.score;
+    if(vsMe.dead){
+      _vsEl('vsMeDead').style.display='flex';
+      const dm2=_vsEl('vsMeDead');
+      if(!vsOpp.dead && !vsOpp.done && vsMe.score > vsOpp.score)
+        dm2.textContent = 'DEAD · 상대가 ' + vsMe.score + '점을 넘어야 함';
+      else dm2.textContent = 'DEAD';
+    }
+    // 상대: 각도 보간 + 빔은 수신값 기준으로 자체 진행
+    let da2=((_vsOppTargetAngle - vsOpp.angle + Math.PI*3) % (Math.PI*2)) - Math.PI;
+    vsOpp.angle += da2*Math.min(1, 0.45*dtf);
+    if(!vsOpp.dead && !vsOpp.done){
+      for(const b of vsOpp.beams){
+        if(b.state==='tele'){ b.tele-=dt; if(b.tele<=0){ b.state='active'; b.r=G.AR; } }
+        else if(b.state==='out') b.r += (G.AR/dm.cross)*dt*2.2;
+        else b.r -= (G.AR/dm.cross)*dt;
+      }
+      vsOpp.beams = vsOpp.beams.filter(b=> b.r>G.CR*0.8 && b.r<G.AR*1.35);
+    }
+    dvsDraw(meCv, vsMe, dm, true);
+    dvsDraw(opCv, vsOpp, dm, false);
+    if(_vsShouldFinish()){ vsFinish(); return; }
+    vsRAF=requestAnimationFrame(vsLoop);
+    return;
+  }
+
+  // ── 피하기 대전 ──
   const speed=m.speed||2.5, interval=1080/speed;
   // 내 진행
   if(!vsMe.dead){
@@ -4181,8 +4445,16 @@ function vsFinish(){
     else if(vsOpp.dead){ title='승리!'; color='#00FFB0'; }
     else { title='패배'; color='#FF3355'; }
   } else {
-    // 디펜스: 점수 비교 (보스는 둘 다 클리어 시 무승부)
-    if(vsMe.score>vsOpp.score){ title='승리!'; color='#00FFB0'; }
+    // 디펜스
+    if(m.kind==='보스'){
+      if(vsMe.won && vsOpp.won){ title='무승부'; color='#FFD600'; sub='둘 다 보스 격파!'; }
+      else if(vsMe.won){ title='승리!'; color='#00FFB0'; sub='보스 격파!'; }
+      else if(vsOpp.won){ title='패배'; color='#FF3355'; sub='상대가 보스를 격파했어요.'; }
+      else if(vsMe.score>vsOpp.score){ title='승리!'; color='#00FFB0'; }
+      else if(vsMe.score<vsOpp.score){ title='패배'; color='#FF3355'; }
+      else { title='무승부'; color='#FFD600'; }
+    }
+    else if(vsMe.score>vsOpp.score){ title='승리!'; color='#00FFB0'; }
     else if(vsMe.score<vsOpp.score){ title='패배'; color='#FF3355'; }
     else { title='무승부'; color='#FFD600'; }
   }
