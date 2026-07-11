@@ -212,7 +212,8 @@
         </label>
         <div style="color:#666; font-size:11px; margin-bottom:16px;">설정에서 다시 변경할 수 있습니다.</div>
         <button onclick="showLogin()" style="width:100%; background:transparent; border:1px solid #fff; color:#fff; padding:9px 0; border-radius:8px; cursor:pointer; font-size:13px; margin-bottom:8px;">다른 계정으로 로그인</button>
-        <button onclick="showSignup()" style="width:100%; background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:9px 0; border-radius:8px; cursor:pointer; font-size:13px;">새로운 계정 생성</button>
+        <button onclick="showSignup()" style="width:100%; background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:9px 0; border-radius:8px; cursor:pointer; font-size:13px; margin-bottom:8px;">새로운 계정 생성</button>
+        <button onclick="askLogout()" style="width:100%; background:transparent; border:1px solid #FF3355; color:#FF3355; padding:9px 0; border-radius:8px; cursor:pointer; font-size:13px;">로그아웃</button>
       </div>
       <div style="margin-top:20px; border-top:1px solid #222; padding-top:16px;">
         <button id="saveSettingsBtn" onclick="saveSettings()" style="width:100%; background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:9px 0; border-radius:6px; cursor:pointer; font-size:13px;">저장</button>
@@ -467,7 +468,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <div style="display:flex; align-items:baseline; gap:10px;">
           <div style="color:#FF8C00; font-size:16px; font-weight:600;">🔐 관리자</div>
-          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD H3Q6W8ZD</div>
+          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD P9L5J3XK</div>
         </div>
         <button onclick="adminClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
       </div>
@@ -480,6 +481,18 @@
       <div id="adminBody" style="display:none; flex-direction:column; flex:1; min-height:0;">
         <div id="adminInfo" style="color:#888; font-size:11px; margin-bottom:8px;"></div>
         <div id="adminList" style="flex:1; overflow-y:auto; background:#0c0c0c; border:1px solid #222; border-radius:10px; padding:8px 6px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 로그아웃 확인 -->
+  <div id="logoutConfirm" style="position:absolute; inset:0; z-index:79; display:none; background:rgba(0,0,0,0.8); align-items:center; justify-content:center;">
+    <div style="background:#111; border:1px solid #333; border-radius:14px; padding:26px 30px; min-width:300px; display:flex; flex-direction:column; gap:14px; align-items:center;">
+      <div style="color:#FFD600; font-size:15px; font-weight:600;">⚠ 로그아웃</div>
+      <div style="color:#aaa; font-size:12px; line-height:1.7; text-align:center;">계정을 사용하지 않으면<br>리더보드에 기록이 되지 않습니다.<br>그래도 하시겠습니까?</div>
+      <div style="display:flex; gap:10px; margin-top:4px;">
+        <button onclick="cancelLogout()" style="background:transparent; border:1px solid #666; color:#aaa; padding:9px 26px; border-radius:8px; cursor:pointer; font-size:13px;">아니오</button>
+        <button onclick="doLogout()" style="background:transparent; border:1px solid #FF3355; color:#FF3355; padding:9px 26px; border-radius:8px; cursor:pointer; font-size:13px;">예</button>
       </div>
     </div>
   </div>
@@ -501,8 +514,10 @@
     <button onclick="vsExit()" style="position:absolute; top:14px; left:14px; background:transparent; border:1px solid #fff; color:#fff; padding:7px 14px; border-radius:6px; cursor:pointer; font-size:13px;">‹ 메인화면</button>
     <div style="color:#fff; font-family:'Press Start 2P', monospace; font-size:clamp(13px,2vw,20px); text-shadow:0 0 18px rgba(0,255,176,0.5); margin-bottom:6px;">VERSUS</div>
     <div id="vsLobbyMain" style="display:flex; flex-direction:column; gap:10px; align-items:center;">
-      <button onclick="vsCreateRoom()" style="background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:11px 34px; border-radius:8px; cursor:pointer; font-size:14px;">방 만들기</button>
-      <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+      <button onclick="vsAutoMatch()" style="background:transparent; border:1px solid #FF8C00; color:#FF8C00; padding:11px 34px; border-radius:8px; cursor:pointer; font-size:14px;">⚡ 자동 매칭</button>
+      <div style="color:#555; font-size:11px; margin:2px 0 6px;">— 또는 친구와 —</div>
+      <button onclick="vsCreateRoom()" style="background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:10px 34px; border-radius:8px; cursor:pointer; font-size:13px;">방 만들기</button>
+      <div style="display:flex; gap:8px; align-items:center; margin-top:2px;">
         <input id="vsCodeInput" maxlength="6" placeholder="방 코드" style="width:120px; background:#222; border:1px solid #444; color:#fff; border-radius:6px; padding:9px 10px; font-size:14px; text-align:center; letter-spacing:3px; text-transform:uppercase;" onkeydown="event.stopPropagation(); if(event.key==='Enter') vsJoinRoom();">
         <button onclick="vsJoinRoom()" style="background:transparent; border:1px solid #fff; color:#fff; padding:9px 20px; border-radius:6px; cursor:pointer; font-size:13px;">입장</button>
       </div>
@@ -510,9 +525,9 @@
       <div style="color:#555; font-size:11px; margin-top:8px;">모드: EXPERT · 먼저 죽는 사람이 패배</div>
     </div>
     <div id="vsWaiting" style="display:none; flex-direction:column; align-items:center; gap:10px;">
-      <div style="color:#aaa; font-size:12px;">방 코드</div>
+      <div id="vsCodeLabel" style="color:#aaa; font-size:12px;">방 코드</div>
       <div id="vsRoomCode" style="color:#00FFB0; font-family:monospace; font-size:34px; letter-spacing:8px; font-weight:600;">------</div>
-      <div style="color:#888; font-size:12px;">친구에게 이 코드를 알려주세요.</div>
+      <div id="vsCodeHint" style="color:#888; font-size:12px;">친구에게 이 코드를 알려주세요.</div>
       <div id="vsWaitMsg" style="color:#FFD600; font-size:12px; margin-top:6px;">상대를 기다리는 중…</div>
       <button onclick="vsLeaveRoom()" style="background:transparent; border:1px solid #666; color:#aaa; padding:7px 18px; border-radius:6px; cursor:pointer; font-size:12px; margin-top:6px;">취소</button>
     </div>
@@ -3522,6 +3537,7 @@ function lbUpdateNickLabel(){ const el=document.getElementById('lbNickLabel'); i
 function _refreshAcctSettings(){
   const c=document.getElementById('acctCurrent'); if(c) c.textContent = acct ? ('현재 계정: '+acct.nick) : '로그인되어 있지 않아요.';
   const t=document.getElementById('acctAutoToggle'); if(t) t.checked = autoLoginPref;
+  const lo=document.querySelector('#settingsPage3 button[onclick="askLogout()"]'); if(lo) lo.style.display = acct ? 'block' : 'none';
 }
 function acctToggleAuto(on){
   autoLoginPref=on;
@@ -3530,6 +3546,21 @@ function acctToggleAuto(on){
     if(on && acct) localStorage.setItem('atl_acct', JSON.stringify(acct));
     if(!on) localStorage.removeItem('atl_acct');
   }catch(e){}
+}
+// 로그아웃 (경고 확인 후 게스트로 전환)
+function askLogout(){ if(!acct) return; document.getElementById('logoutConfirm').style.display='flex'; }
+function cancelLogout(){ document.getElementById('logoutConfirm').style.display='none'; }
+function doLogout(){
+  document.getElementById('logoutConfirm').style.display='none';
+  try{ _sendOffline(); }catch(e){}
+  acct=null; autoLoginPref=false; _guest=true;
+  try{
+    localStorage.removeItem('atl_acct');
+    localStorage.setItem('atl_autologin','0');
+    localStorage.setItem('atl_guest','1');
+  }catch(e){}
+  if(typeof _loadBestScores==='function') _loadBestScores();
+  lbUpdateNickLabel(); _refreshAcctSettings();
 }
 
 // ═══ 관리자 (비밀번호는 서버에서 검증 — 코드에 저장하지 않음) ═══
@@ -3724,12 +3755,33 @@ async function vsRpc(fn, extra){
 }
 function _vsErr(t){ const e=document.getElementById('vsLobbyErr'); e.textContent=t; e.style.display='block'; }
 
+// ⚡ 자동 매칭: 대기 중인 방이 있으면 입장, 없으면 새 방을 만들고 기다림
+async function vsAutoMatch(){
+  const res = await vsRpc('vs_match');
+  if(!res.ok){ _vsErr('매칭 실패: '+res.msg); return; }
+  const d = (typeof res.data==='string') ? { code:res.data, joined:false } : (res.data||{});
+  const code = d.code || (Array.isArray(res.data) ? (res.data[0]&&res.data[0].code) : null);
+  const joined = Array.isArray(res.data) ? !!(res.data[0]&&res.data[0].joined) : !!d.joined;
+  if(!code){ _vsErr('매칭 실패'); return; }
+  vsRoom = code; vsIsHost = !joined;
+  document.getElementById('vsLobbyMain').style.display='none';
+  document.getElementById('vsWaiting').style.display='flex';
+  document.getElementById('vsRoomCode').style.display='none';          // 자동 매칭은 코드 숨김
+  document.getElementById('vsCodeLabel').style.display='none';
+  document.getElementById('vsCodeHint').style.display='none';
+  document.getElementById('vsWaitMsg').textContent = joined ? '상대를 찾았어요! 연결 중…' : '상대를 찾는 중…';
+  vsState='waiting';
+  vsPollTimer = setInterval(vsPollLobby, 1200);
+}
 async function vsCreateRoom(){
   const res = await vsRpc('vs_create');
   if(!res.ok){ _vsErr('방 만들기 실패: '+res.msg); return; }
   vsRoom = (typeof res.data==='string') ? res.data : (res.data && res.data.code);
   vsIsHost = true;
   document.getElementById('vsRoomCode').textContent = vsRoom;
+  document.getElementById('vsRoomCode').style.display='block';
+  document.getElementById('vsCodeLabel').style.display='block';
+  document.getElementById('vsCodeHint').style.display='block';
   document.getElementById('vsLobbyMain').style.display='none';
   document.getElementById('vsWaiting').style.display='flex';
   vsState='waiting';
@@ -3747,6 +3799,9 @@ async function vsJoinRoom(){
   document.getElementById('vsLobbyMain').style.display='none';
   document.getElementById('vsWaiting').style.display='flex';
   document.getElementById('vsRoomCode').textContent = code;
+  document.getElementById('vsRoomCode').style.display='block';
+  document.getElementById('vsCodeLabel').style.display='block';
+  document.getElementById('vsCodeHint').style.display='none';
   document.getElementById('vsWaitMsg').textContent = '연결 중…';
   vsState='waiting';
   vsPollTimer = setInterval(vsPollLobby, 1200);
