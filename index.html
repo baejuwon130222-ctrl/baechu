@@ -36,6 +36,7 @@
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#222; display:flex; align-items:center; justify-content:center; min-height:100vh; }
@@ -498,7 +499,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <div style="display:flex; align-items:baseline; gap:10px;">
           <div style="color:#FF8C00; font-size:16px; font-weight:600;">🔐 관리자</div>
-          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD S6D9K1WN</div>
+          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD C8N3P6HR</div>
         </div>
         <button onclick="adminClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
       </div>
@@ -569,7 +570,7 @@
   <div id="vsVote" style="position:absolute; inset:0; z-index:42; display:none; background:#000; flex-direction:column; align-items:center; justify-content:center; padding:3% 3%; box-sizing:border-box; gap:12px;">
     <div style="display:flex; align-items:center; gap:14px;">
       <div style="color:#fff; font-size:16px; font-weight:600;">모드 선택</div>
-      <div style="color:#FFD600; font-size:14px;">남은 시간 <span id="vsVoteTime" style="font-weight:700;">10</span>초</div>
+      <div style="color:#FFD600; font-size:14px;">남은 시간 <span id="vsVoteTime" style="font-weight:700;">30</span>초</div>
     </div>
     <div id="vsVoteGrid" style="width:100%; display:grid; grid-template-columns:repeat(10, 1fr); gap:6px;"></div>
     <div style="color:#666; font-size:11px;">모드를 클릭해 투표하세요 · 둘 다 투표하면 3초 뒤 시작</div>
@@ -3758,7 +3759,7 @@ function vsModeById(id){ return VS_MODES.find(m=>m.id===id) || VS_MODES[2]; }
 let vsRoom=null, vsIsHost=false, vsOppNick='', vsAuto=false;
 let vsPhase='idle';        // idle|waiting|vote|countdown|playing|over
 let vsPollTimer=null, vsPushTimer=null, vsRAF=null, vsVoteTimer=null;
-let vsMyVote=null, vsOppVote=null, vsVoteLeft=10, vsMode=null;
+let vsMyVote=null, vsOppVote=null, vsVoteLeft=30, vsMode=null;
 let vsMe={ angle:0, rings:[], score:0, dead:false, last:0, done:false };
 let vsOpp={ angle:0, rings:[], score:0, dead:false, done:false };
 let _vsLastTs=0;
@@ -3789,6 +3790,7 @@ function _vsStopTimers(){
 function vsCleanup(){
   if(vsRoom) vsRpc('vs_leave', { p_code:vsRoom }).catch(()=>{});
   _vsStopTimers();
+  vsChanClose();
   vsRoom=null; vsPhase='idle'; vsOppNick=''; vsAuto=false; vsMode=null;
 }
 function vsExit(){
@@ -3896,7 +3898,7 @@ async function vsHostStart(){
 
 // ── 모드 투표 (10초) ──
 function vsStartVote(){
-  vsPhase='vote'; vsMyVote=null; vsOppVote=null; vsVoteLeft=10;
+  vsPhase='vote'; vsMyVote=null; vsOppVote=null; vsVoteLeft=30;
   _vsEl('vsLobby').style.display='none';
   _vsEl('vsVote').style.display='flex';
   _vsRenderVoteGrid();
@@ -3979,6 +3981,7 @@ function vsDecideMode(){
 // ── 배틀 ──
 function vsStartBattle(){
   const m=vsMode||vsModeById('a_expert');
+  vsChanOpen(vsRoom);           // Realtime 연결 (실패하면 폴링으로 자동 폴백)
   _vsEl('vsBattle').style.display='flex';
   _vsEl('vsResult').style.display='none';
   _vsEl('vsMeDead').style.display='none';
@@ -4001,18 +4004,60 @@ function vsStartBattle(){
     else{
       clearInterval(t); cd.style.display='none';
       vsPhase='playing'; vsMe.last=performance.now(); _vsLastTs=0;
-      vsPushTimer=setInterval(vsPush, 120);
-      vsPollTimer=setInterval(vsPull, 120);
+      vsPushTimer=setInterval(vsPush, vsChan ? 50 : 120);   // Realtime이면 초당 20회
+      vsPollTimer=setInterval(vsPull, 150);                 // 폴백(채널 있으면 내부에서 무시)
       vsRAF=requestAnimationFrame(vsLoop);
     }
   },1000);
+}
+// ── Realtime: 웹소켓으로 상대 상태를 즉시 주고받음(폴링보다 훨씬 부드러움) ──
+let _sb=null, vsChan=null;
+function _sbClient(){
+  if(_sb) return _sb;
+  try{
+    if(window.supabase && window.supabase.createClient){
+      _sb = window.supabase.createClient(LB_URL, LB_KEY, { realtime:{ params:{ eventsPerSecond:30 } } });
+    }
+  }catch(e){ _sb=null; }
+  return _sb;
+}
+function vsChanOpen(code){
+  vsChanClose();
+  const sb=_sbClient(); if(!sb) return false;
+  try{
+    vsChan = sb.channel('vs-'+code, { config:{ broadcast:{ self:false } } });
+    vsChan.on('broadcast', { event:'st' }, (msg)=>{ _vsOnState(msg && msg.payload); });
+    vsChan.subscribe();
+    return true;
+  }catch(e){ vsChan=null; return false; }
+}
+function vsChanClose(){
+  if(vsChan){ try{ vsChan.unsubscribe(); }catch(e){} vsChan=null; }
+}
+// 상대 상태 수신 (Realtime 또는 폴링 공통)
+let _vsOppTargetAngle=0, _vsOppPrevRings=[], _vsOppRecvTs=0;
+function _vsOnState(s){
+  if(!s) return;
+  _vsOppTargetAngle = s.a||0;
+  vsOpp.score = s.s||0; vsOpp.dead = !!s.d; vsOpp.done = !!s.f;
+  const nr = (s.r||[]).map(x=>({ r:x[0], gapAngle:x[1] }));
+  vsOpp.rings = nr;
+  _vsOppRecvTs = performance.now();
+  const el=_vsEl('vsOppScore'); if(el) el.textContent=vsOpp.score;
+  if(vsOpp.dead){ const d=_vsEl('vsOppDead'); if(d) d.style.display='flex'; }
+  if(vsPhase==='playing' && _vsShouldFinish()) vsFinish();
 }
 async function vsPush(){
   if(!vsRoom || (vsPhase!=='playing' && vsPhase!=='over')) return;
   const st={ a:Math.round(vsMe.angle*100)/100, s:vsMe.score, d:vsMe.dead, f:vsMe.done,
              r:vsMe.rings.map(x=>[Math.round(x.r), Math.round(x.gapAngle*100)/100]) };
+  // Realtime이 열려 있으면 즉시 전송(빠름), 아니면 서버 저장(폴백)
+  if(vsChan){
+    try{ vsChan.send({ type:'broadcast', event:'st', payload:st }); return; }catch(e){}
+  }
   vsRpc('vs_push', { p_code:vsRoom, p_state:JSON.stringify(st) }).catch(()=>{});
 }
+// 폴백 폴링 (Realtime이 안 될 때만 사용)
 async function vsPull(){
   if(!vsRoom) return;
   const res=await vsRpc('vs_state', { p_code:vsRoom });
@@ -4020,17 +4065,19 @@ async function vsPull(){
   const d=_vsRow(res.data); if(!d) return;
   const mine=(acct.nick===d.host_nick);
   const raw = mine ? d.guest_state : d.host_state;
-  if(raw){
-    try{
-      const s=(typeof raw==='string')?JSON.parse(raw):raw;
-      _vsOppTargetAngle = s.a||0;
-      vsOpp.score=s.s||0; vsOpp.dead=!!s.d; vsOpp.done=!!s.f;
-      vsOpp.rings=(s.r||[]).map(x=>({ r:x[0], gapAngle:x[1] }));
-      _vsEl('vsOppScore').textContent=vsOpp.score;
-      if(vsOpp.dead) _vsEl('vsOppDead').style.display='flex';
-    }catch(e){}
-  }
-  if(vsPhase==='playing' && _vsShouldFinish()) vsFinish();
+  if(!raw) return;
+  try{
+    const s=(typeof raw==='string')?JSON.parse(raw):raw;
+    if(vsChan){
+      // Realtime 사용 중: 사망/종료 신호만 반영(그림은 Realtime이 담당)
+      if(s.d && !vsOpp.dead){ vsOpp.dead=true; const el=_vsEl('vsOppDead'); if(el) el.style.display='flex';
+        if(typeof s.s==='number') vsOpp.score=s.s;
+        if(vsPhase==='playing' && _vsShouldFinish()) vsFinish();
+      }
+      return;
+    }
+    _vsOnState(s);
+  }catch(e){}
 }
 // 종료 조건 (게임/모드별)
 function _vsShouldFinish(){
@@ -4040,7 +4087,6 @@ function _vsShouldFinish(){
   return (vsMe.dead||vsMe.done) && (vsOpp.dead||vsOpp.done);
 }
 // 상대 각도 부드럽게 보간(끊김 완화)
-let _vsOppTargetAngle=0;
 function vsLoop(ts){
   if(vsPhase!=='playing'){ vsRAF=null; return; }
   let dtf=1; if(_vsLastTs) dtf=Math.min((ts-_vsLastTs)/(1000/60),3);
@@ -4060,13 +4106,21 @@ function vsLoop(ts){
     if(_isPressed(keyBind.cw1)||_isPressed(keyBind.cw2)||touchRight) vsMe.angle+=0.12*dtf;
     const ar=arrowDist+arrowSize;
     for(const r of vsMe.rings){ if(!r.passed && r.r<ar-2){ r.passed=true; vsMe.score+=10; _vsEl('vsMeScore').textContent=vsMe.score; } }
-    if(vsHit(vsMe)){ vsMe.dead=true; _vsEl('vsMeDead').style.display='flex'; vsPush(); }
+    if(vsHit(vsMe)){
+      vsMe.dead=true; _vsEl('vsMeDead').style.display='flex';
+      vsPush();
+      // 사망은 반드시 전달돼야 하므로 서버에도 한 번 더 저장(안전장치)
+      const st={ a:vsMe.angle, s:vsMe.score, d:true, f:vsMe.done, r:[] };
+      vsRpc('vs_push', { p_code:vsRoom, p_state:JSON.stringify(st) }).catch(()=>{});
+    }
   }
-  // 상대 각도 보간
+  // 상대: 각도는 부드럽게 따라가고, 레이저는 수신값 사이를 자체 진행(예측)해서 끊김 없이 보이게
   let da=((_vsOppTargetAngle - vsOpp.angle + Math.PI*3) % (Math.PI*2)) - Math.PI;
-  vsOpp.angle += da*Math.min(1, 0.35*dtf);
-  // 상대 링도 자체적으로 부드럽게 이동(수신 사이 보간)
-  for(const r of vsOpp.rings) r.r -= speed*2*dtf*0.0;   // 수신값 그대로 사용
+  vsOpp.angle += da*Math.min(1, 0.45*dtf);
+  if(!vsOpp.dead){
+    for(const r of vsOpp.rings) r.r -= speed*2*dtf;
+    vsOpp.rings = vsOpp.rings.filter(r=>r.r>7);
+  }
   vsDraw(_vsEl('vsMeCanvas'), vsMe, true, m);
   vsDraw(_vsEl('vsOppCanvas'), vsOpp, false, m);
   if(_vsShouldFinish()){ vsFinish(); return; }
