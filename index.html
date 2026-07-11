@@ -106,7 +106,10 @@
         <button onclick="goToMode()" style="background:transparent; border:1px solid #fff; color:#fff; padding:10px 28px; border-radius:6px; cursor:pointer; font-size:14px;" onmouseover="this.style.opacity='0.6'" onmouseout="this.style.opacity='1'">모드</button>
         <button onclick="vsOpen()" style="background:transparent; border:1px solid #FF8C00; color:#FF8C00; padding:10px 26px; border-radius:6px; cursor:pointer; font-size:14px;" onmouseover="this.style.opacity='0.6'" onmouseout="this.style.opacity='1'">⚔ 대전</button>
       </div>
-      <button onclick="lbOpen('avoid')" style="background:transparent; border:1px solid #fff; color:#fff; padding:8px 28px; border-radius:6px; cursor:pointer; font-size:13px;" onmouseover="this.style.opacity='0.6'" onmouseout="this.style.opacity='1'">🏆 리더보드</button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button onclick="lbOpen('avoid')" style="background:transparent; border:1px solid #fff; color:#fff; padding:8px 22px; border-radius:6px; cursor:pointer; font-size:13px;" onmouseover="this.style.opacity='0.6'" onmouseout="this.style.opacity='1'">🏆 리더보드</button>
+        <button onclick="frOpen()" style="background:transparent; border:1px solid #fff; color:#fff; padding:8px 22px; border-radius:6px; cursor:pointer; font-size:13px;" onmouseover="this.style.opacity='0.6'" onmouseout="this.style.opacity='1'">👥 친구</button>
+      </div>
     </div>
 
     <!-- 게임 조작 팝업 -->
@@ -499,7 +502,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <div style="display:flex; align-items:baseline; gap:10px;">
           <div style="color:#FF8C00; font-size:16px; font-weight:600;">🔐 관리자</div>
-          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD W6Z2Q8FT</div>
+          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD N9K4T7ZC</div>
         </div>
         <button onclick="adminClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
       </div>
@@ -525,6 +528,32 @@
         <button onclick="cancelLogout()" style="background:transparent; border:1px solid #666; color:#aaa; padding:9px 26px; border-radius:8px; cursor:pointer; font-size:13px;">아니오</button>
         <button onclick="doLogout()" style="background:transparent; border:1px solid #FF3355; color:#FF3355; padding:9px 26px; border-radius:8px; cursor:pointer; font-size:13px;">예</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 친구 목록 -->
+  <div id="friendPanel" style="position:absolute; inset:0; z-index:62; display:none; background:rgba(0,0,0,0.93); flex-direction:column; align-items:center; padding:3% 4%; box-sizing:border-box;">
+    <div style="width:100%; max-width:600px; display:flex; flex-direction:column; height:100%;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div style="color:#fff; font-size:16px; font-weight:600;">👥 친구</div>
+        <button onclick="frClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
+      </div>
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input id="frAddInput" maxlength="16" placeholder="친구 닉네임" style="flex:1; background:#222; border:1px solid #444; color:#fff; border-radius:6px; padding:9px 10px; font-size:13px;" onkeydown="event.stopPropagation(); if(event.key==='Enter') frAdd();">
+        <button onclick="frAdd()" style="background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:9px 18px; border-radius:6px; cursor:pointer; font-size:13px;">추가</button>
+      </div>
+      <div id="frMsg" style="display:none; font-size:11px; margin-bottom:8px;"></div>
+      <div id="frList" style="flex:1; overflow-y:auto; background:#0c0c0c; border:1px solid #222; border-radius:10px; padding:8px 6px;"></div>
+    </div>
+  </div>
+
+  <!-- 대전 초대 알림 -->
+  <div id="inviteToast" style="position:absolute; top:16px; right:16px; z-index:85; display:none; background:#111; border:1px solid #FF8C00; border-radius:12px; padding:14px 18px; min-width:250px; box-shadow:0 6px 24px rgba(0,0,0,0.6);">
+    <div style="color:#FF8C00; font-size:12px; font-weight:600; margin-bottom:6px;">⚔ 대결 초대</div>
+    <div id="inviteFrom" style="color:#fff; font-size:13px; margin-bottom:10px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button onclick="inviteDecline()" style="background:transparent; border:1px solid #666; color:#aaa; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">거절</button>
+      <button onclick="inviteAccept()" style="background:transparent; border:1px solid #00FFB0; color:#00FFB0; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">수락</button>
     </div>
   </div>
 
@@ -4090,6 +4119,7 @@ function vsStartBattle(){
   _vsEl('vsOppFrame').style.display  = isD ? 'block' : 'none';
   vsMe={ angle:0, rings:[], score:0, dead:false, last:0, done:false, won:false };
   vsOpp={ angle:0, rings:[], score:0, dead:false, done:false, won:false };
+  _vsFirstDead=null;
   if(isD) _dvsBoot(m);          // 원본 디펜스 주입 (내 것 + 관전용)
   vsPhase='countdown';
   try{ if(isD) stopMusic(); else startMusic('game'); }catch(e){}
@@ -4153,6 +4183,13 @@ window.addEventListener('message', (e)=>{
   else if(d.type==='dvs-end'){
     vsMe.score=d.score||vsMe.score; vsMe.won=!!d.won;
     if(vsMe.won) vsMe.done=true; else vsMe.dead=true;
+    // 죽은 뒤에도 최종 상태를 계속 알림(상대가 내 점수를 알아야 판정 가능)
+    const fin={ s:vsMe.score, d:vsMe.dead, w:vsMe.won, a:0, b:[] };
+    const send=()=>{
+      if(vsChan){ try{ vsChan.send({ type:'broadcast', event:'st', payload:fin }); }catch(e){} }
+      vsRpc('vs_push', { p_code:vsRoom, p_state:JSON.stringify(fin) }).catch(()=>{});
+    };
+    send(); setTimeout(send, 400); setTimeout(send, 1200);
     if(vsPhase==='playing' && _vsShouldFinish()) vsFinish();
   }
 });
@@ -4225,31 +4262,42 @@ async function vsPull(){
   if(!raw) return;
   try{
     const s=(typeof raw==='string')?JSON.parse(raw):raw;
+    const mm=vsMode||{};
     if(vsChan){
-      // Realtime 사용 중: 사망/종료 신호만 반영(그림은 Realtime이 담당)
-      if(s.d && !vsOpp.dead){ vsOpp.dead=true; const el=_vsEl('vsOppDead'); if(el) el.style.display='flex';
-        if(typeof s.s==='number') vsOpp.score=s.s;
-        if(vsPhase==='playing' && _vsShouldFinish()) vsFinish();
-      }
+      // Realtime 사용 중: 사망/점수만 보정(그림은 Realtime이 담당)
+      if(typeof s.s==='number' && s.s>vsOpp.score){ vsOpp.score=s.s; const el=_vsEl('vsOppScore'); if(el) el.textContent=vsOpp.score; }
+      if(s.d && !vsOpp.dead){ vsOpp.dead=true; const el2=_vsEl('vsOppDead'); if(el2) el2.style.display='flex'; }
+      if(s.w) { vsOpp.won=true; vsOpp.done=true; }
+      if(vsPhase==='playing' && _vsShouldFinish()) vsFinish();
       return;
     }
     _vsOnState(s);
   }catch(e){}
 }
+// 먼저 죽은 사람: 'me' | 'opp' | null
+let _vsFirstDead=null;
 // 종료 조건 (게임/모드별)
 function _vsShouldFinish(){
   const m=vsMode||{};
   if(m.game==='avoid') return vsMe.dead || vsOpp.dead;           // 먼저 죽으면 끝
-  // 디펜스
   const meEnd = vsMe.dead || vsMe.done, opEnd = vsOpp.dead || vsOpp.done;
-  if(m.kind==='보스'){
-    return meEnd && opEnd;                                       // 보스: 둘 다 끝나야 판정(둘 다 클리어=무승부)
+  if(m.kind==='보스') return meEnd && opEnd;                     // 보스: 둘 다 끝나야 판정
+  // 누가 먼저 죽었는지 기록
+  if(!_vsFirstDead){
+    if(meEnd && !opEnd) _vsFirstDead='me';
+    else if(opEnd && !meEnd) _vsFirstDead='opp';
   }
-  if(meEnd && opEnd) return true;
-  // 한 명만 죽었을 때: 죽은 사람 점수가 살아있는 사람보다 낮으면 즉시 끝(죽은 사람 패배)
-  if(meEnd && !opEnd && vsMe.score <= vsOpp.score) return true;
-  if(opEnd && !meEnd && vsOpp.score <= vsMe.score) return true;
-  // 죽은 사람 점수가 더 높으면: 상대가 그 점수를 넘거나 죽을 때까지 계속
+  if(meEnd && opEnd) return true;              // 둘 다 끝남
+  // 내가 먼저 죽음: 내 점수가 낮으면 즉시 패배 확정 / 높으면 상대가 넘을 때까지 대기
+  if(_vsFirstDead==='me'){
+    if(vsMe.score <= vsOpp.score) return true;         // 이미 넘겼음(또는 애초에 낮음) → 끝
+    return false;                                       // 상대가 아직 못 넘음 → 계속
+  }
+  // 상대가 먼저 죽음: 상대 점수가 낮으면 즉시 끝(내가 이미 넘음) / 높으면 내가 넘거나 죽을 때까지
+  if(_vsFirstDead==='opp'){
+    if(vsOpp.score <= vsMe.score) return true;
+    return false;
+  }
   return false;
 }
 // 상대 각도 부드럽게 보간(끊김 완화)
@@ -4342,26 +4390,39 @@ function vsFinish(){
   if(vsPhase==='over') return;
   vsPhase='over';
   _vsStopTimers();
-  vsPush();
   const m=vsMode||{};
   let title, color, sub='내 점수 '+vsMe.score+'  ·  상대 '+vsOpp.score;
   if(m.game==='avoid'){
     if(vsMe.dead && vsOpp.dead){ title='무승부'; color='#FFD600'; }
     else if(vsOpp.dead){ title='승리!'; color='#00FFB0'; }
     else { title='패배'; color='#FF3355'; }
-  } else {
-    // 디펜스
-    if(m.kind==='보스'){
-      if(vsMe.won && vsOpp.won){ title='무승부'; color='#FFD600'; sub='둘 다 보스 격파!'; }
-      else if(vsMe.won){ title='승리!'; color='#00FFB0'; sub='보스 격파!'; }
-      else if(vsOpp.won){ title='패배'; color='#FF3355'; sub='상대가 보스를 격파했어요.'; }
-      else if(vsMe.score>vsOpp.score){ title='승리!'; color='#00FFB0'; }
-      else if(vsMe.score<vsOpp.score){ title='패배'; color='#FF3355'; }
-      else { title='무승부'; color='#FFD600'; }
-    }
+  } else if(m.kind==='보스'){
+    // 보스: 격파 여부 우선, 둘 다 격파면 무승부
+    if(vsMe.won && vsOpp.won){ title='무승부'; color='#FFD600'; sub='둘 다 보스 격파!'; }
+    else if(vsMe.won){ title='승리!'; color='#00FFB0'; sub='보스 격파!'; }
+    else if(vsOpp.won){ title='패배'; color='#FF3355'; sub='상대가 보스를 격파했어요.'; }
     else if(vsMe.score>vsOpp.score){ title='승리!'; color='#00FFB0'; }
     else if(vsMe.score<vsOpp.score){ title='패배'; color='#FF3355'; }
     else { title='무승부'; color='#FFD600'; }
+  } else {
+    // 디펜스(일반·트윈): 먼저 죽은 사람이 기준
+    // - 먼저 죽은 사람 점수가 더 낮으면 → 그 사람 패배
+    // - 먼저 죽은 사람 점수가 더 높으면 → 상대가 그 점수를 넘어야 승리, 못 넘고 죽으면 패배
+    const iDiedFirst = (_vsFirstDead==='me'), oppDiedFirst = (_vsFirstDead==='opp');
+    if(iDiedFirst){
+      // 내가 먼저 죽음 → 상대가 내 점수를 넘겼는가?
+      if(vsOpp.score > vsMe.score){ title='패배'; color='#FF3355'; sub='상대가 내 점수를 넘었어요 · '+vsMe.score+' → '+vsOpp.score; }
+      else { title='승리!'; color='#00FFB0'; sub='상대가 내 점수를 못 넘었어요 · '+vsMe.score+' vs '+vsOpp.score; }
+    } else if(oppDiedFirst){
+      // 상대가 먼저 죽음 → 내가 상대 점수를 넘겼는가?
+      if(vsMe.score > vsOpp.score){ title='승리!'; color='#00FFB0'; sub='상대 점수를 넘었어요 · '+vsOpp.score+' → '+vsMe.score; }
+      else { title='패배'; color='#FF3355'; sub='상대 점수를 못 넘었어요 · '+vsMe.score+' vs '+vsOpp.score; }
+    } else {
+      // 판별 불가(동시 등) → 점수 비교
+      if(vsMe.score>vsOpp.score){ title='승리!'; color='#00FFB0'; }
+      else if(vsMe.score<vsOpp.score){ title='패배'; color='#FF3355'; }
+      else { title='무승부'; color='#FFD600'; }
+    }
   }
   const rt=_vsEl('vsResultText'), rs=_vsEl('vsResultScore');
   rt.textContent=title; rt.style.color=color; rs.textContent=sub;
@@ -4378,6 +4439,138 @@ async function vsAfterResult(){
   _vsEl('vsLobby').style.display='flex';
   vsPhase='waiting';
   _vsEnterWaiting(true);
+}
+
+// ═══════════════ 친구 & 대결 초대 ═══════════════
+let _frInvite=null, _frPollTimer=null;
+function frOpen(){
+  if(!lbOn()){ alert('서버 연결이 필요해요.'); return; }
+  if(!acct){ _vsEl('vsNeedAcct').style.display='flex'; return; }
+  document.getElementById('friendPanel').style.display='flex';
+  document.getElementById('frAddInput').value='';
+  document.getElementById('frMsg').style.display='none';
+  frLoad();
+}
+function frClose(){ document.getElementById('friendPanel').style.display='none'; }
+function _frMsg(t, ok){
+  const m=document.getElementById('frMsg');
+  m.textContent=t; m.style.color = ok ? '#00FFB0' : '#FF3355'; m.style.display='block';
+  setTimeout(()=>{ m.style.display='none'; }, 2500);
+}
+async function frRpc(fn, extra){
+  const body=Object.assign({ p_nick:acct.nick, p_token:acct.token }, extra||{});
+  try{
+    const r=await fetch(LB_URL+'/rest/v1/rpc/'+fn, {
+      method:'POST', headers:{ 'apikey':LB_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    if(r.ok) return { ok:true, data: await r.json().catch(()=>null) };
+    let m=''; try{ const j=await r.json(); m=(j&&(j.message||j.error))||''; }catch(e){}
+    return { ok:false, msg:m };
+  }catch(e){ return { ok:false, msg:'네트워크 오류' }; }
+}
+async function frAdd(){
+  const n=(document.getElementById('frAddInput').value||'').trim();
+  if(!n) return;
+  if(n===acct.nick){ _frMsg('자기 자신은 추가할 수 없어요.'); return; }
+  const res=await frRpc('fr_add', { p_friend:n });
+  if(!res.ok){
+    _frMsg(/NO_USER/.test(res.msg)?'그런 닉네임의 계정이 없어요.':/DUP/.test(res.msg)?'이미 친구예요.':('실패: '+res.msg));
+    return;
+  }
+  document.getElementById('frAddInput').value='';
+  _frMsg(n+' 님을 친구로 추가했어요.', true);
+  frLoad();
+}
+async function frRemove(n){
+  if(!confirm('"'+n+'" 님을 친구에서 삭제할까요?')) return;
+  await frRpc('fr_del', { p_friend:n });
+  frLoad();
+}
+async function frLoad(){
+  const box=document.getElementById('frList');
+  box.innerHTML='<div style="color:#666; font-size:12px; padding:16px; text-align:center;">불러오는 중…</div>';
+  const res=await frRpc('fr_list');
+  if(!res.ok){ box.innerHTML='<div style="color:#FF3355; font-size:12px; padding:16px; text-align:center;">불러오기 실패</div>'; return; }
+  const rows=res.data||[];
+  if(!rows.length){ box.innerHTML='<div style="color:#888; font-size:12px; padding:20px; text-align:center;">아직 친구가 없어요.<br>위에 닉네임을 입력해 추가해 보세요.</div>'; return; }
+  const now=Date.now();
+  box.innerHTML='';
+  for(const r of rows){
+    const on = r.last_seen ? (now - new Date(r.last_seen).getTime() < 20000) : false;
+    const row=document.createElement('div');
+    row.style.cssText='display:flex; align-items:center; gap:10px; padding:9px 12px; border-bottom:1px solid #1a1a1a;';
+    row.innerHTML=
+      '<div style="width:9px;height:9px;border-radius:50%;flex-shrink:0;background:'+(on?'#3BD671':'#555')+';'+(on?'box-shadow:0 0 6px #3BD671;':'')+'"></div>'+
+      '<div style="flex:1; min-width:0;">'+
+        '<div style="color:#fff; font-size:13px;">'+_lbEsc(r.friend)+'</div>'+
+        '<div style="color:'+(on?'#3BD671':'#666')+'; font-size:10px; margin-top:2px;">'+(on?'접속 중':'오프라인')+'</div>'+
+      '</div>';
+    const btn=document.createElement('button');
+    btn.textContent='⚔ 대전';
+    btn.disabled=!on;
+    btn.style.cssText='background:transparent; border:1px solid '+(on?'#FF8C00':'#444')+'; color:'+(on?'#FF8C00':'#555')+'; padding:6px 12px; border-radius:6px; cursor:'+(on?'pointer':'default')+'; font-size:11px; flex-shrink:0;';
+    if(on) btn.onclick=()=>frChallenge(r.friend);
+    const del=document.createElement('button');
+    del.textContent='삭제';
+    del.style.cssText='background:transparent; border:1px solid #666; color:#888; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:11px; flex-shrink:0;';
+    del.onclick=()=>frRemove(r.friend);
+    row.appendChild(btn); row.appendChild(del);
+    box.appendChild(row);
+  }
+}
+// 친구에게 대전 초대 → 방을 만들고 코드를 초대에 담아 보냄
+async function frChallenge(friend){
+  const res=await vsRpc('vs_create');
+  if(!res.ok){ _frMsg('방 만들기 실패'); return; }
+  const d=_vsRow(res.data);
+  const code=(typeof d==='string')?d:(d&&d.code);
+  if(!code){ _frMsg('방 만들기 실패'); return; }
+  const inv=await frRpc('fr_invite', { p_to:friend, p_code:code });
+  if(!inv.ok){ _frMsg('초대 실패: '+inv.msg); return; }
+  _frMsg(friend+' 님에게 대결을 신청했어요!', true);
+  // 나는 방에서 상대를 기다림
+  frClose();
+  if(controlsOpen) toggleControls(); if(settingsOpen) toggleSettings();
+  mainScreen.style.display='none';
+  _vsEl('vsLobby').style.display='flex';
+  vsRoom=code; vsIsHost=true; vsAuto=false;
+  try{ stopMusic(); }catch(e){}
+  _vsEnterWaiting(true);
+}
+// 초대 알림 폴링 (로그인 중이면 계속 확인)
+async function _frPollInvite(){
+  if(!lbOn() || !acct) return;
+  if(vsPhase==='playing' || vsPhase==='countdown' || vsPhase==='vote') return;
+  if(_frInvite) return;
+  const res=await frRpc('fr_invite_get');
+  if(!res.ok) return;
+  const d=_vsRow(res.data);
+  if(d && d.from_nick && d.code){
+    _frInvite = { from:d.from_nick, code:d.code };
+    document.getElementById('inviteFrom').textContent = d.from_nick + ' 님이 대결을 신청했어요!';
+    document.getElementById('inviteToast').style.display='block';
+  }
+}
+setInterval(_frPollInvite, 3000);
+async function inviteAccept(){
+  if(!_frInvite) return;
+  const inv=_frInvite; _frInvite=null;
+  document.getElementById('inviteToast').style.display='none';
+  await frRpc('fr_invite_clear');
+  const res=await vsRpc('vs_join', { p_code:inv.code });
+  if(!res.ok){ alert('방에 입장할 수 없어요. (상대가 취소했을 수 있어요)'); return; }
+  if(controlsOpen) toggleControls(); if(settingsOpen) toggleSettings();
+  mainScreen.style.display='none';
+  _vsEl('vsLobby').style.display='flex';
+  vsRoom=inv.code; vsIsHost=false; vsAuto=false;
+  try{ stopMusic(); }catch(e){}
+  _vsEnterWaiting(true);
+}
+async function inviteDecline(){
+  _frInvite=null;
+  document.getElementById('inviteToast').style.display='none';
+  await frRpc('fr_invite_clear');
 }
 
 // 관리자 패널 열기: 메인화면에서 '관리자'(또는 영문 자판 그대로 'rhksflwk')를 치고 Enter
