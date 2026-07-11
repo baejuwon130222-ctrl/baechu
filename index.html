@@ -1,9 +1,39 @@
 <!DOCTYPE html>
+<!--
+  ═══════════════════════════════════════════════════════════
+   Avoid the Lasers / Deflect the Lasers
+   Copyright (c) 2026 baejuwon130222-ctrl. All Rights Reserved.
+
+   이 코드는 저작권법의 보호를 받습니다.
+   무단 복제, 배포, 수정, 재배포를 금지합니다.
+   Unauthorized copying, distribution, or modification is prohibited.
+  ═══════════════════════════════════════════════════════════
+-->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Avoid the Lasers</title>
+<script>
+// ── 도메인 잠금: 허가된 주소에서만 실행 ──
+(function(){
+  var ok = [
+    'baejuwon130222-ctrl.github.io',   // 공식 사이트
+    'localhost', '127.0.0.1', ''       // 로컬 테스트 / 파일 열기
+  ];
+  var h = location.hostname;
+  var allowed = ok.indexOf(h) !== -1 || location.protocol === 'file:';
+  if (!allowed) {
+    document.documentElement.innerHTML =
+      '<body style="margin:0;background:#000;color:#FF3355;display:flex;align-items:center;' +
+      'justify-content:center;height:100vh;font-family:sans-serif;text-align:center;">' +
+      '<div><div style="font-size:22px;margin-bottom:12px;">⛔ 허가되지 않은 사이트입니다</div>' +
+      '<div style="color:#888;font-size:13px;line-height:1.7;">이 게임은 무단 복제·재배포가 금지되어 있습니다.<br>' +
+      '공식 사이트에서 플레이해 주세요.</div></div></body>';
+    throw new Error('Unauthorized host');
+  }
+})();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <style>
@@ -468,7 +498,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <div style="display:flex; align-items:baseline; gap:10px;">
           <div style="color:#FF8C00; font-size:16px; font-weight:600;">🔐 관리자</div>
-          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD T2F7B4YM</div>
+          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD S6D9K1WN</div>
         </div>
         <button onclick="adminClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
       </div>
