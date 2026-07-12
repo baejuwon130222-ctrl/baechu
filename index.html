@@ -517,7 +517,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <div style="display:flex; align-items:baseline; gap:10px;">
           <div style="color:#FF8C00; font-size:16px; font-weight:600;">🔐 관리자</div>
-          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD D4W9L6PN</div>
+          <div style="color:#00FFB0; font-size:12px; font-family:monospace; letter-spacing:1px;">BUILD G8T5R2XV</div>
         </div>
         <button onclick="adminClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
       </div>
@@ -585,7 +585,7 @@
           <button onclick="notifClose()" style="background:transparent; border:1px solid #fff; color:#fff; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">닫기</button>
         </div>
       </div>
-      <div id="notifList" style="flex:1; overflow-y:auto; background:#181818; border:1px solid #3a3a3a; border-radius:10px; padding:6px 4px;"></div>
+      <div id="notifList" style="flex:1; overflow-y:auto; background:#2e2e2e; border:1px solid #666; border-radius:10px; padding:6px 4px;"></div>
     </div>
   </div>
 
@@ -4641,31 +4641,30 @@ function notifClearAll(){ notifs=[]; notifSave(); notifRefreshBadge(); notifRend
 function notifRender(){
   const box=document.getElementById('notifList');
   box.innerHTML='';
-  if(!notifs.length){ box.innerHTML='<div style="color:#ccc; font-size:14px; padding:28px; text-align:center;">알림이 없어요.</div>'; return; }
+  if(!notifs.length){ box.innerHTML='<div style="color:#fff; font-size:15px; padding:30px; text-align:center;">알림이 없어요.</div>'; return; }
   for(const n of notifs){
     const L=_notifLabel(n);
     const row=document.createElement('div');
-    row.style.cssText='display:flex; align-items:center; gap:12px; padding:14px 16px; margin:6px 4px; border-radius:10px; '+
-      (n.done ? 'background:#1c1c1c; border:1px solid #333; opacity:0.7;'
-              : 'background:#2a2a2a; border:1px solid #4a4a4a;');
+    row.style.cssText='display:flex; align-items:center; gap:12px; padding:15px 18px; margin:8px 6px; border-radius:12px; '+
+      (n.done ? 'background:#8a8a8a; opacity:0.75;' : 'background:#f0f0f0;');
     row.innerHTML=
       '<div style="flex:1; min-width:0;">'+
-        '<div style="color:#FFA640; font-size:13px; font-weight:700; margin-bottom:5px;">'+L.t+'</div>'+
-        '<div style="color:#fff; font-size:15px; line-height:1.5; font-weight:500;">'+L.b+'</div>'+
-        '<div style="color:#b0b0b0; font-size:12px; margin-top:6px;">'+_notifTime(n.ts)+'</div>'+
+        '<div style="color:#C05000; font-size:13px; font-weight:800; margin-bottom:6px;">'+L.t+'</div>'+
+        '<div style="color:#111; font-size:16px; line-height:1.5; font-weight:700;">'+L.b+'</div>'+
+        '<div style="color:#555; font-size:12px; margin-top:7px; font-weight:500;">'+_notifTime(n.ts)+'</div>'+
       '</div>';
     if(!n.done && (n.type==='friend_req' || n.type==='battle')){
       const yes=document.createElement('button'), no=document.createElement('button');
       yes.textContent = n.type==='battle' ? '수락' : '예';
       no.textContent  = n.type==='battle' ? '거절' : '아니오';
-      yes.style.cssText='background:#00FFB0; border:none; color:#062; padding:9px 18px; border-radius:7px; cursor:pointer; font-size:13px; font-weight:700; flex-shrink:0;';
-      no.style.cssText ='background:#555; border:none; color:#fff; padding:9px 18px; border-radius:7px; cursor:pointer; font-size:13px; font-weight:600; flex-shrink:0;';
+      yes.style.cssText='background:#00C878; border:none; color:#fff; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px; font-weight:800; flex-shrink:0;';
+      no.style.cssText ='background:#777; border:none; color:#fff; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px; font-weight:700; flex-shrink:0;';
       yes.onclick=()=>notifRespond(n.id,true);
       no.onclick =()=>notifRespond(n.id,false);
       row.appendChild(no); row.appendChild(yes);
     } else if(n.done){
       const s=document.createElement('div');
-      s.style.cssText='color:#aaa; font-size:12px; flex-shrink:0;';
+      s.style.cssText='color:#333; font-size:13px; font-weight:700; flex-shrink:0;';
       s.textContent='처리됨';
       row.appendChild(s);
     }
